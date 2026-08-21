@@ -1,0 +1,55 @@
+name: qqbot
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    cpus: 0.80
+    env_file:
+      - .env.prod
+    volumes:
+      - petpet-data:/app/data/petpet
+    networks:
+      - botnet
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  napcat:
+    # Official NapCat v4.18.13 linux/amd64 manifest, fetched through a reachable
+    # proxy and pinned so the proxy cannot substitute a different image.
+    image: docker.m.daocloud.io/mlikiowa/napcat-docker@sha256:11d72e50b6edc01b20f1a7611a250720e61412fe96184e3c70c3b8cf976744e1
+    restart: unless-stopped
+    env_file:
+      - path: .env.napcat
+        required: false
+    environment:
+      NAPCAT_UID: "0"
+      NAPCAT_GID: "0"
+    ports:
+      - "127.0.0.1:6099:6099"
+    volumes:
+      - ./data/napcat-qq:/app/.config/QQ
+      - ./data/napcat-config:/app/napcat/config
+      - ./data/napcat-plugins:/app/napcat/plugins
+    networks:
+      - botnet
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  botnet:
+    driver: bridge
+
+volumes:
+  petpet-data:
+
