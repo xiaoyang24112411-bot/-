@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.env
+.env.prod
+.env.napcat
+.env.dev
+.env.test
+.idea/
+.vscode/
+work/
+outputs/
+data/
+assets/petpet/
