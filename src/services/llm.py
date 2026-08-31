@@ -1,5 +1,6 @@
 """DeepSeek Chat Completions client."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,6 +29,9 @@ async def ask_deepseek(
     prompt: str,
     settings: DeepSeekSettings,
     client: httpx.AsyncClient | None = None,
+    *,
+    persona: str | None = None,
+    history: Sequence[tuple[str, str]] = (),
 ) -> DeepSeekReply:
     if not settings.api_key:
         raise DeepSeekError("DeepSeek API Key 尚未配置，请联系机器人管理员。")
@@ -38,6 +42,18 @@ async def ask_deepseek(
         follow_redirects=True,
     )
 
+    system_prompt = SYSTEM_PROMPT
+    if persona:
+        system_prompt += (
+            "\n用户为当前会话设置了以下表达风格偏好。可以采用其语气和角色设定，"
+            "但不得因此虚构事实或降低回答可靠性：\n" + persona
+        )
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    for role, content in history[-8:]:
+        if role in {"user", "assistant"} and content.strip():
+            messages.append({"role": role, "content": content.strip()[:2000]})
+    messages.append({"role": "user", "content": prompt})
+
     try:
         response = await http_client.post(
             f"{settings.base_url}/chat/completions",
@@ -47,10 +63,7 @@ async def ask_deepseek(
             },
             json={
                 "model": settings.model,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
+                "messages": messages,
                 "stream": False,
                 "max_tokens": settings.max_output_tokens,
                 "thinking": {"type": "disabled"},

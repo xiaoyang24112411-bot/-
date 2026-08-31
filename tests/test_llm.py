@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 import respx
@@ -36,6 +38,34 @@ async def test_ask_deepseek():
     request = route.calls[0].request
     assert request.headers["Authorization"] == "Bearer test-key"
     assert b'"thinking":{"type":"disabled"}' in request.content
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_ask_deepseek_includes_persona_and_history():
+    route = respx.post("https://api.deepseek.com/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "model": "deepseek-v4-flash",
+                "choices": [{"message": {"role": "assistant", "content": "继续回答"}}],
+            },
+        )
+    )
+    await ask_deepseek(
+        "继续",
+        settings(),
+        persona="用简洁的侦探口吻回答",
+        history=(("user", "上一问"), ("assistant", "上一答")),
+    )
+    payload = json.loads(route.calls[0].request.content)
+    assert "侦探口吻" in payload["messages"][0]["content"]
+    assert [message["role"] for message in payload["messages"]] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+    ]
 
 
 @pytest.mark.asyncio

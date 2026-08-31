@@ -11,6 +11,8 @@ services:
       - .env.prod
     volumes:
       - petpet-data:/app/data/petpet
+      - economy-data:/app/data/economy
+      - media-data:/app/data/media
     networks:
       - botnet
     security_opt:
@@ -38,6 +40,7 @@ services:
       - ./data/napcat-qq:/app/.config/QQ
       - ./data/napcat-config:/app/napcat/config
       - ./data/napcat-plugins:/app/napcat/plugins
+      - media-data:/app/data/media
     networks:
       - botnet
     logging:
@@ -52,3 +55,5 @@ networks:
 
 volumes:
   petpet-data:
+  economy-data:
+  media-data:

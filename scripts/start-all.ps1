@@ -6,6 +6,7 @@ $napcatRuntime = Join-Path $projectRoot "work\napcat-shell\runtime"
 $napcatLauncher = Join-Path $napcatRuntime "launcher-user.bat"
 $stdoutPath = Join-Path $projectRoot "work\bot.stdout.log"
 $stderrPath = Join-Path $projectRoot "work\bot.stderr.log"
+$localBotPort = 18080
 
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
@@ -18,8 +19,11 @@ if (-not (Test-Path -LiteralPath $napcatLauncher)) {
     throw "NapCat launcher not found: $napcatLauncher"
 }
 
-$botListener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+$botListener = Get-NetTCPConnection -LocalPort $localBotPort -State Listen -ErrorAction SilentlyContinue
 if (-not $botListener) {
+    # The local NapCat reverse WebSocket client targets port 18080. Docker keeps
+    # using the PORT value from .env.prod inside its private network.
+    $env:PORT = "$localBotPort"
     Start-Process `
         -FilePath $pythonPath `
         -ArgumentList "bot.py" `
@@ -30,9 +34,9 @@ if (-not $botListener) {
     Start-Sleep -Seconds 3
 }
 
-$botListener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+$botListener = Get-NetTCPConnection -LocalPort $localBotPort -State Listen -ErrorAction SilentlyContinue
 if (-not $botListener) {
-    throw "NoneBot failed to listen on port 8080. Check work\bot.stderr.log."
+    throw "NoneBot failed to listen on port $localBotPort. Check work\bot.stderr.log."
 }
 
 $napcatRunning = Get-CimInstance Win32_Process | Where-Object {
@@ -48,5 +52,5 @@ if (-not $napcatRunning) {
         -WindowStyle Normal
 }
 
-Write-Host "NoneBot is listening on 127.0.0.1:8080."
+Write-Host "NoneBot is listening on 127.0.0.1:$localBotPort."
 Write-Host "NapCat launcher is running or has been started."
