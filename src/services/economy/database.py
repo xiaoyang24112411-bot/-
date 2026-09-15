@@ -9,7 +9,7 @@ import aiosqlite
 
 from src.config import get_economy_settings
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -256,6 +256,39 @@ CREATE TABLE IF NOT EXISTS wordcloud_messages (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS recall_group_settings (
+    group_id INTEGER PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    updated_by INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rss_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    feed_url TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    last_entry_id TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    created_by INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (group_id, feed_url)
+);
+
+CREATE TABLE IF NOT EXISTS bili_subscriptions (
+    group_id INTEGER NOT NULL,
+    uid INTEGER NOT NULL CHECK (uid > 0),
+    display_name TEXT NOT NULL DEFAULT '',
+    last_dynamic_id TEXT NOT NULL DEFAULT '',
+    last_live_status INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    created_by INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, uid)
+);
+
 CREATE INDEX IF NOT EXISTS idx_checkins_group_date
     ON daily_checkins(group_id, checkin_date);
 CREATE INDEX IF NOT EXISTS idx_transactions_account_time
@@ -280,6 +313,10 @@ CREATE INDEX IF NOT EXISTS idx_roulette_user_time
     ON roulette_records(group_id, user_id, played_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wordcloud_messages_group_time
     ON wordcloud_messages(group_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rss_subscriptions_enabled
+    ON rss_subscriptions(enabled, group_id);
+CREATE INDEX IF NOT EXISTS idx_bili_subscriptions_enabled
+    ON bili_subscriptions(enabled, group_id);
 """
 
 

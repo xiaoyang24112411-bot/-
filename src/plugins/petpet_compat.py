@@ -2,23 +2,38 @@
 
 import asyncio
 import re
+from pathlib import Path
 
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
 from nonebot.exception import IgnoredException
 from nonebot.log import logger
 from nonebot.message import event_postprocessor, event_preprocessor
 from nonebot_plugin_imageutils.fonts import add_font
+from nonebot_plugin_petpet import depends as petpet_depends
 from nonebot_plugin_petpet import download as petpet_download
 from nonebot_plugin_petpet.data_source import memes
 
 from src.compat.pydantic import apply_build_image_schema_compatibility
 from src.services.petpet import (
+    download_qq_avatar,
     has_explicit_target,
     normalize_command_text,
     strip_optional_command_prefix,
 )
 
 apply_build_image_schema_compatibility()
+
+# petpet 0.3.21 hard-codes an obsolete plain-HTTP q1.qlogo.cn endpoint. Both
+# modules hold a reference to that function, so replace both with our HTTPS
+# multi-endpoint downloader.
+petpet_download.download_avatar = download_qq_avatar
+petpet_depends.download_avatar = download_qq_avatar
+
+bundled_petpet_path = Path(__file__).resolve().parents[2] / "assets" / "petpet"
+if not (petpet_download.data_path / "resource_list.json").is_file() and (
+    bundled_petpet_path / "resource_list.json"
+).is_file():
+    petpet_download.data_path = bundled_petpet_path
 
 
 async def check_local_petpet_resources() -> None:
@@ -56,6 +71,16 @@ async def normalize_petpet_message(bot: Bot, event: MessageEvent) -> None:
         return
 
     first_text = str(message[0].data.get("text", ""))
+    if re.fullmatch(r"\s*/?表情列表\s*", first_text):
+        message[0].data["text"] = "/头像表情包"
+        return
+
+    generic = re.match(r"^(?P<leading>\s*)/?表情\s+(?P<template>\S+)(?P<rest>.*)$", first_text)
+    if generic:
+        first_text = (
+            generic.group("leading") + generic.group("template") + generic.group("rest")
+        )
+        message[0].data["text"] = first_text
     normalized, is_alias_or_common = normalize_command_text(first_text)
     if not is_alias_or_common and not is_registered_petpet_command(normalized):
         return

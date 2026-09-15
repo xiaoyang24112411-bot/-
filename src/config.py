@@ -9,6 +9,7 @@ from dotenv import dotenv_values
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENV_FILE = PROJECT_ROOT / ".env.prod"
+PERMANENT_ADMIN_IDS = frozenset({2448821316})
 
 
 def _as_bool(value: str | None, default: bool = False) -> bool:
@@ -93,6 +94,15 @@ class AIFeatureSettings:
     tts_timeout_seconds: float
 
 
+@dataclass(frozen=True)
+class SubscriptionSettings:
+    rss_poll_seconds: int
+    bili_poll_seconds: int
+    bilibili_api_base_url: str
+    bilibili_live_api_base_url: str
+    bilibili_sessdata: str
+
+
 def get_app_settings() -> AppSettings:
     words = tuple(
         word.strip() for word in _get_value("SENSITIVE_WORDS", "广告").split(",") if word.strip()
@@ -100,7 +110,7 @@ def get_app_settings() -> AppSettings:
     return AppSettings(
         enable_sensitive_recall=_as_bool(_get_value("ENABLE_SENSITIVE_RECALL")),
         sensitive_words=words,
-        admin_ids=_as_user_ids(_get_value("BOT_ADMIN_IDS", "2448821316")),
+        admin_ids=_as_user_ids(_get_value("BOT_ADMIN_IDS", "")) | PERMANENT_ADMIN_IDS,
     )
 
 
@@ -184,4 +194,18 @@ def get_ai_feature_settings() -> AIFeatureSettings:
         wordcloud_retention_days=min(90, max(1, int(_get_value("WORDCLOUD_RETENTION_DAYS", "30")))),
         tts_max_characters=min(1000, max(50, int(_get_value("TTS_MAX_CHARACTERS", "300")))),
         tts_timeout_seconds=max(10.0, float(_get_value("TTS_TIMEOUT_SECONDS", "45"))),
+    )
+
+
+def get_subscription_settings() -> SubscriptionSettings:
+    return SubscriptionSettings(
+        rss_poll_seconds=max(60, int(_get_value("RSS_POLL_SECONDS", "300"))),
+        bili_poll_seconds=max(60, int(_get_value("BILI_POLL_SECONDS", "180"))),
+        bilibili_api_base_url=_get_value(
+            "BILIBILI_API_BASE_URL", "https://api.bilibili.com"
+        ).strip().rstrip("/"),
+        bilibili_live_api_base_url=_get_value(
+            "BILIBILI_LIVE_API_BASE_URL", "https://api.live.bilibili.com"
+        ).strip().rstrip("/"),
+        bilibili_sessdata=_get_value("BILIBILI_SESSDATA").strip(),
     )

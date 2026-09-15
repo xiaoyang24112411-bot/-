@@ -6,7 +6,7 @@ from nonebot.rule import Rule
 
 from src.config import get_economy_settings
 from src.services.economy import EconomyError, get_economy_database
-from src.services.economy.accounts import get_account
+from src.services.economy.accounts import get_account, get_leaderboard
 from src.services.economy.checkin import check_in
 from src.services.economy.commands import command_text
 
@@ -21,6 +21,11 @@ def is_points(event: GroupMessageEvent) -> bool:
 
 checkin = on_message(rule=Rule(is_checkin), priority=10, block=True)
 points = on_message(rule=Rule(is_points), priority=10, block=True)
+leaderboard = on_message(
+    rule=Rule(lambda event: command_text(event, "排行榜") is not None),
+    priority=10,
+    block=True,
+)
 
 
 @checkin.handle()
@@ -57,3 +62,20 @@ async def handle_points(event: GroupMessageEvent) -> None:
         MessageSegment.at(event.user_id) + f" 当前积分：{account.balance}\n"
         f"累计获得：{account.total_earned}\n累计支出：{account.total_spent}"
     )
+
+
+@leaderboard.handle()
+async def handle_leaderboard(event: GroupMessageEvent) -> None:
+    try:
+        rows = await get_leaderboard(get_economy_database(), event.group_id)
+    except Exception:
+        logger.exception("Point leaderboard lookup failed")
+        await leaderboard.finish("积分排行榜查询失败，请稍后再试。")
+    if not rows:
+        await leaderboard.finish("本群还没有积分记录，先发送“签到”吧。")
+    lines = ["🏆 本群积分排行榜"]
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    for row in rows:
+        prefix = medals.get(row.rank, f"{row.rank}.")
+        lines.append(f"{prefix} QQ {row.user_id}：{row.balance} 积分")
+    await leaderboard.finish("\n".join(lines))

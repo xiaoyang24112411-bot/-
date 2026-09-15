@@ -12,6 +12,7 @@ from src.services.entertainment.daily_fortune import draw_daily_fortune
 def is_daily_fortune(event: GroupMessageEvent) -> bool:
     return (
         command_text(event, "每日运势") is not None or command_text(event, "今日运势") is not None
+        or command_text(event, "人品") is not None
     )
 
 

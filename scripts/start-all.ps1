@@ -31,7 +31,14 @@ if (-not $botListener) {
         -RedirectStandardOutput $stdoutPath `
         -RedirectStandardError $stderrPath `
         -WindowStyle Hidden
-    Start-Sleep -Seconds 3
+    # Loading image, browser, and subscription plugins can take several seconds
+    # on a cold Windows start. Poll instead of reporting a false failure.
+    for ($attempt = 0; $attempt -lt 15; $attempt++) {
+        Start-Sleep -Seconds 1
+        if (Get-NetTCPConnection -LocalPort $localBotPort -State Listen -ErrorAction SilentlyContinue) {
+            break
+        }
+    }
 }
 
 $botListener = Get-NetTCPConnection -LocalPort $localBotPort -State Listen -ErrorAction SilentlyContinue

@@ -10,6 +10,7 @@ from src.services.ai_features import AIFeatureError
 from src.services.ai_features.personas import clear_persona, get_persona, set_persona
 from src.services.economy import get_economy_database
 from src.services.economy.commands import command_text
+from src.services.permissions import is_group_manager
 
 
 def _rule(command: str) -> Rule:
@@ -29,6 +30,7 @@ set_ai_persona = on_message(
 )
 show_ai_persona = on_message(rule=_rule("查看人格"), priority=10, block=True)
 reset_ai_persona = on_message(rule=_rule("重置人格"), priority=10, block=True)
+set_group_persona = on_message(rule=_rule("修改设定"), priority=10, block=True)
 
 
 @set_ai_persona.handle()
@@ -63,3 +65,22 @@ async def handle_show_persona(event: GroupMessageEvent) -> None:
 async def handle_reset_persona(event: GroupMessageEvent) -> None:
     await clear_persona(get_economy_database(), event.group_id, event.user_id)
     await reset_ai_persona.finish(MessageSegment.at(event.user_id) + " 自定义人格已重置。")
+
+
+@set_group_persona.handle()
+async def handle_set_group_persona(event: GroupMessageEvent) -> None:
+    if not is_group_manager(event):
+        await set_group_persona.finish("只有群主、群管理员或机器人终极管理员可以修改本群设定。")
+    try:
+        persona = await set_persona(
+            get_economy_database(),
+            event.group_id,
+            0,
+            command_text(event, "修改设定") or "",
+        )
+    except AIFeatureError as exc:
+        await set_group_persona.finish(str(exc))
+    except Exception:
+        logger.exception("Group AI persona update failed")
+        await set_group_persona.finish("本群 AI 设定修改失败，请稍后再试。")
+    await set_group_persona.finish(f"本群默认 AI 设定已保存：{persona}")

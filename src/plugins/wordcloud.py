@@ -29,6 +29,8 @@ enable_wordcloud = on_message(rule=_rule("开启词云记录"), priority=10, blo
 disable_wordcloud = on_message(rule=_rule("关闭词云记录"), priority=10, block=True)
 wordcloud_status = on_message(rule=_rule("词云状态"), priority=10, block=True)
 create_wordcloud = on_message(rule=_rule("生成词云"), priority=10, block=True)
+today_wordcloud = on_message(rule=_rule("今日词云"), priority=10, block=True)
+week_wordcloud = on_message(rule=_rule("本周词云"), priority=10, block=True)
 clear_wordcloud = on_message(rule=_rule("清空词云记录"), priority=10, block=True)
 message_recorder = on_message(priority=99, block=False)
 
@@ -112,6 +114,30 @@ async def handle_create_wordcloud(event: GroupMessageEvent) -> None:
         logger.exception("Word cloud generation failed")
         await create_wordcloud.finish("词云生成失败，请稍后再试。")
     await create_wordcloud.finish(MessageSegment.image(image) + f"\n本群最近 {days} 天词云")
+
+
+async def _finish_period_wordcloud(matcher, event: GroupMessageEvent, days: int) -> None:
+    try:
+        messages = await get_wordcloud_messages(get_economy_database(), event.group_id, days)
+        font = resolve_wordcloud_font(get_ai_feature_settings().wordcloud_font_path)
+        image = await asyncio.to_thread(generate_wordcloud, messages, font)
+    except AIFeatureError as exc:
+        await matcher.finish(MessageSegment.at(event.user_id) + f" {exc}")
+    except Exception:
+        logger.exception("Word cloud generation failed")
+        await matcher.finish("词云生成失败，请稍后再试。")
+    label = "今日" if days == 1 else "本周"
+    await matcher.finish(MessageSegment.image(image) + f"\n本群{label}词云")
+
+
+@today_wordcloud.handle()
+async def handle_today_wordcloud(event: GroupMessageEvent) -> None:
+    await _finish_period_wordcloud(today_wordcloud, event, 1)
+
+
+@week_wordcloud.handle()
+async def handle_week_wordcloud(event: GroupMessageEvent) -> None:
+    await _finish_period_wordcloud(week_wordcloud, event, 7)
 
 
 @clear_wordcloud.handle()

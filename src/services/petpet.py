@@ -2,6 +2,7 @@
 
 import re
 
+import httpx
 from nonebot.adapters.onebot.v11 import Message
 
 ALIASES = {
@@ -45,3 +46,45 @@ def has_explicit_target(message: Message, command_text: str) -> bool:
 
     tokens = command_text.split()
     return "自己" in tokens or any(token.isdigit() and 5 <= len(token) <= 11 for token in tokens)
+
+
+async def download_qq_avatar(
+    user_id: str,
+    *,
+    timeout: float = 15,
+    client: httpx.AsyncClient | None = None,
+) -> bytes:
+    """Download a QQ avatar from HTTPS endpoints, with independent fallbacks."""
+    qq = str(user_id).strip()
+    if not qq.isdigit():
+        raise ValueError("QQ number must contain digits only")
+    urls = (
+        f"https://qlogo4.store.qq.com/qzone/{qq}/{qq}/640",
+        f"https://qlogo3.store.qq.com/qzone/{qq}/{qq}/640",
+        f"https://qlogo2.store.qq.com/qzone/{qq}/{qq}/640",
+        f"https://q1.qlogo.cn/g?b=qq&nk={qq}&s=640",
+    )
+    owns_client = client is None
+    http_client = client or httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0 QQBot-Petpet/1.0"},
+    )
+    errors: list[Exception] = []
+    try:
+        for url in urls:
+            try:
+                response = await http_client.get(url)
+                response.raise_for_status()
+                content = response.content
+                image_magic = content.startswith(
+                    (b"\x89PNG", b"\xff\xd8\xff", b"GIF8", b"RIFF")
+                )
+                if len(content) >= 100 and image_magic:
+                    return content
+            except httpx.HTTPError as exc:
+                errors.append(exc)
+    finally:
+        if owns_client:
+            await http_client.aclose()
+    raise RuntimeError("所有 QQ 头像下载地址均不可用") from (errors[-1] if errors else None)

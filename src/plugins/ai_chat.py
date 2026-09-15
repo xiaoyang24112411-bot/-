@@ -18,7 +18,7 @@ last_request_at: dict[int, float] = {}
 conversation_history: dict[tuple[int, int], deque[tuple[str, str]]] = {}
 
 ask = on_command("问", aliases={"ai"}, priority=10, block=True)
-clear_chat = on_command("清空对话", priority=10, block=True)
+clear_chat = on_command("清空对话", aliases={"记忆清除"}, priority=10, block=True)
 
 
 def _conversation_key(event: MessageEvent) -> tuple[int, int]:

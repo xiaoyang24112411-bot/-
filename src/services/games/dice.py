@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from src.services.economy.errors import EconomyError
 
 DICE_PATTERN = re.compile(r"^(\d+)[dD](\d+)$")
+RANGE_PATTERN = re.compile(r"^(-?\d+)\s*[-~～]\s*(-?\d+)$")
 
 
 @dataclass(frozen=True)
@@ -35,3 +36,17 @@ def roll_dice(argument: str, rng: random.Random | None = None) -> DiceResult:
     generator = rng or random.SystemRandom()
     rolls = tuple(generator.randint(1, faces) for _ in range(count))
     return DiceResult(count=count, faces=faces, rolls=rolls)
+
+
+def roll_range(argument: str, rng: random.Random | None = None) -> int:
+    text = argument.strip() or "1-100"
+    matched = RANGE_PATTERN.fullmatch(text)
+    if matched is None:
+        raise EconomyError("用法：/roll 最小值-最大值，例如：/roll 1-100")
+    lower, upper = (int(value) for value in matched.groups())
+    if lower > upper:
+        raise EconomyError("最小值不能大于最大值。")
+    if upper - lower > 1_000_000_000:
+        raise EconomyError("随机范围过大。")
+    generator = rng or random.SystemRandom()
+    return generator.randint(lower, upper)

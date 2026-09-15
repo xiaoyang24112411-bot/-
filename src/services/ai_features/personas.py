@@ -11,8 +11,9 @@ MAX_PERSONA_LENGTH = 300
 async def get_persona(database: EconomyDatabase, group_id: int, user_id: int) -> str | None:
     async with database.connect() as connection:
         cursor = await connection.execute(
-            "SELECT persona FROM ai_personas WHERE group_id = ? AND user_id = ?",
-            (group_id, user_id),
+            "SELECT persona FROM ai_personas WHERE group_id = ? AND user_id IN (?, 0) "
+            "ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END LIMIT 1",
+            (group_id, user_id, user_id),
         )
         row = await cursor.fetchone()
     return str(row["persona"]) if row else None

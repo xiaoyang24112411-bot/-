@@ -1,28 +1,30 @@
 """Multi-platform hot-search rankings."""
 
 from nonebot import logger, on_message
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent, MessageSegment
 from nonebot.rule import Rule
 
 from src.config import get_information_settings
-from src.services.economy.commands import command_text
 from src.services.information import InformationError
 from src.services.information.api_60s import HOT_PLATFORMS, fetch_hot_search
+from src.services.information.commands import parse_hot_search_platform
 
 
-def _platform(event: GroupMessageEvent) -> str | None:
-    for command in ("热搜查询", "热搜"):
-        argument = command_text(event, command)
-        if argument is not None:
-            return argument
-    return None
+def _platform(event: MessageEvent) -> str | None:
+    return parse_hot_search_platform(event.get_plaintext())
+
+
+def _reply(event: MessageEvent, text: str):
+    if isinstance(event, GroupMessageEvent):
+        return MessageSegment.at(event.user_id) + f" {text}"
+    return MessageSegment.text(text)
 
 
 hot_search = on_message(
     rule=Rule(lambda event: _platform(event) is not None), priority=10, block=True
 )
 hot_search_platforms = on_message(
-    rule=Rule(lambda event: command_text(event, "热搜平台") is not None),
+    rule=Rule(lambda event: event.get_plaintext().strip() in {"热搜平台", "/热搜平台"}),
     priority=10,
     block=True,
 )
@@ -38,7 +40,7 @@ def _human_hot_value(value: str) -> str:
 
 
 @hot_search.handle()
-async def handle_hot_search(event: GroupMessageEvent) -> None:
+async def handle_hot_search(event: MessageEvent) -> None:
     platform = (_platform(event) or "微博").strip() or "微博"
     settings = get_information_settings()
     try:
@@ -49,7 +51,7 @@ async def handle_hot_search(event: GroupMessageEvent) -> None:
             timeout=settings.timeout_seconds,
         )
     except InformationError as exc:
-        await hot_search.finish(MessageSegment.at(event.user_id) + f" {exc}")
+        await hot_search.finish(_reply(event, str(exc)))
     except Exception:
         logger.exception("Hot-search lookup failed")
         await hot_search.finish("热搜查询失败，请稍后再试。")
