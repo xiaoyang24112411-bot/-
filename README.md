@@ -6,7 +6,7 @@
 - 发送 `/天气 城市名`，通过 Open-Meteo 查询实时天气；
 - 新成员进群时自动 `@` 并欢迎；
 - 可选的敏感词消息撤回（默认关闭）。
-- `/问 内容` 调用 DeepSeek V4 回答问题。
+- `/问 内容` 调用 DeepSeek V4.1 Flash 回答问题。
 - `摸摸`、`搓头`、`拍拍` 和常用 GIF 指令根据群友头像生成表情包。
 
 > QQ 协议端并非腾讯官方机器人接口。请了解账号风控和平台规则，建议使用专门的测试账号，不要对外暴露 WebUI 或 OneBot 端口。
@@ -234,7 +234,7 @@ ping
 /问 用一句话解释什么是 Python
 ```
 
-默认模型为 `deepseek-v4-flash`，接口地址为 `https://api.deepseek.com`。API Key 仅保存在被 Git 忽略的 `.env.prod` 中。每位用户有 15 秒调用冷却，问题上限为 1000 字符，单次输出上限可通过 `DEEPSEEK_MAX_OUTPUT_TOKENS` 调整。
+默认模型为 `deepseek-flash`（当前对应 DeepSeek V4.1 Flash），接口地址为 `https://api.deepseek.com`。API Key 仅保存在被 Git 忽略的 `.env.prod` 中。每位用户有 15 秒调用冷却，问题上限为 1000 字符，单次输出上限可通过 `DEEPSEEK_MAX_OUTPUT_TOKENS` 调整。
 
 ### 签到与积分系统
 

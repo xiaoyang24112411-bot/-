@@ -117,7 +117,7 @@ def get_app_settings() -> AppSettings:
 def get_deepseek_settings() -> DeepSeekSettings:
     return DeepSeekSettings(
         api_key=_get_value("DEEPSEEK_API_KEY").strip(),
-        model=_get_value("DEEPSEEK_MODEL", "deepseek-v4-flash").strip(),
+        model=_get_value("DEEPSEEK_MODEL", "deepseek-flash").strip(),
         base_url=_get_value("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip().rstrip("/"),
         timeout_seconds=float(_get_value("DEEPSEEK_TIMEOUT_SECONDS", "60")),
         max_output_tokens=int(_get_value("DEEPSEEK_MAX_OUTPUT_TOKENS", "1200")),

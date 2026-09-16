@@ -33,13 +33,13 @@ def test_app_settings_reject_invalid_admin_id(monkeypatch):
 
 def test_deepseek_settings(monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "secret")
-    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-flash")
     monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/")
 
     settings = get_deepseek_settings()
 
     assert settings.api_key == "secret"
-    assert settings.model == "deepseek-v4-flash"
+    assert settings.model == "deepseek-flash"
     assert settings.base_url == "https://api.deepseek.com"
 
 
@@ -48,7 +48,7 @@ def test_deepseek_settings_fall_back_to_env_file(monkeypatch, tmp_path):
     env_file = tmp_path / ".env.prod"
     env_file.write_text(
         "DEEPSEEK_API_KEY=file-secret\n"
-        "DEEPSEEK_MODEL=deepseek-v4-flash\n"
+        "DEEPSEEK_MODEL=deepseek-flash\n"
         "DEEPSEEK_BASE_URL=https://api.deepseek.com/\n",
         encoding="utf-8",
     )
@@ -57,7 +57,7 @@ def test_deepseek_settings_fall_back_to_env_file(monkeypatch, tmp_path):
     settings = get_deepseek_settings()
 
     assert settings.api_key == "file-secret"
-    assert settings.model == "deepseek-v4-flash"
+    assert settings.model == "deepseek-flash"
     assert settings.base_url == "https://api.deepseek.com"
 
 

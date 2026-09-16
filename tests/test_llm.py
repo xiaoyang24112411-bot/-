@@ -11,7 +11,7 @@ from src.services.llm import DeepSeekError, ask_deepseek
 def settings(api_key: str = "test-key") -> DeepSeekSettings:
     return DeepSeekSettings(
         api_key=api_key,
-        model="deepseek-v4-flash",
+        model="deepseek-flash",
         base_url="https://api.deepseek.com",
         timeout_seconds=10.0,
         max_output_tokens=1200,
@@ -25,7 +25,7 @@ async def test_ask_deepseek():
         return_value=httpx.Response(
             200,
             json={
-                "model": "deepseek-v4-flash",
+                "model": "deepseek-flash",
                 "choices": [{"message": {"role": "assistant", "content": "你好！"}}],
             },
         )
@@ -34,7 +34,7 @@ async def test_ask_deepseek():
     reply = await ask_deepseek("你好", settings())
 
     assert reply.text == "你好！"
-    assert reply.model == "deepseek-v4-flash"
+    assert reply.model == "deepseek-flash"
     request = route.calls[0].request
     assert request.headers["Authorization"] == "Bearer test-key"
     assert b'"thinking":{"type":"disabled"}' in request.content
@@ -47,7 +47,7 @@ async def test_ask_deepseek_includes_persona_and_history():
         return_value=httpx.Response(
             200,
             json={
-                "model": "deepseek-v4-flash",
+                "model": "deepseek-flash",
                 "choices": [{"message": {"role": "assistant", "content": "继续回答"}}],
             },
         )

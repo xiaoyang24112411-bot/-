@@ -23,7 +23,7 @@ try {
 
     $newContent = @($filteredContent) + @(
         "DEEPSEEK_API_KEY=$plainKey",
-        "DEEPSEEK_MODEL=deepseek-v4-flash",
+        "DEEPSEEK_MODEL=deepseek-flash",
         "DEEPSEEK_BASE_URL=https://api.deepseek.com"
     )
 
