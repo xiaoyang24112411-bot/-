@@ -234,7 +234,13 @@ ping
 /问 用一句话解释什么是 Python
 ```
 
-默认模型为 `deepseek-flash`（当前对应 DeepSeek V4.1 Flash），接口地址为 `https://api.deepseek.com`。API Key 仅保存在被 Git 忽略的 `.env.prod` 中。每位用户有 15 秒调用冷却，问题上限为 1000 字符，单次输出上限可通过 `DEEPSEEK_MAX_OUTPUT_TOKENS` 调整。
+默认模型为 `deepseek-flash`，接口地址为 `https://api.deepseek.com`。API Key 仅保存在被 Git 忽略的 `.env.prod` 中。每位用户有 15 秒调用冷却，问题上限为 1000 字符，普通回答输出上限可通过 `DEEPSEEK_MAX_OUTPUT_TOKENS` 调整。
+
+- `/问 问题` 或 `/ai 问题`：快速问答，不自动搜索互联网。询问天气或热搜时，模型可调用现有的只读查询接口。
+- `/深度问 问题`：启用 DeepSeek 深度推理，通常更慢且消耗更多 token；上限由 `DEEPSEEK_DEEP_MAX_OUTPUT_TOKENS` 控制。
+- `/联网问 问题`：先查 Brave Search，再用网页摘要回答并附来源；`/深度联网问 问题` 同时启用深度推理。
+- 联网搜索需要自行在 [Brave Search API](https://api.search.brave.com/) 申请独立密钥，并把 `BRAVE_SEARCH_API_KEY` 写入 `.env.prod`，再执行 `docker compose up -d --force-recreate bot` 使环境变量生效。未配置时，联网指令会明确提示，普通与深度问答不受影响。联网问题会发送给 Brave；请勿提交密钥或在群里输入隐私信息。机器人仅引用搜索摘要，不保证网页内容正确。
+- AI 工具仅允许查询天气和热搜，不提供群管、积分、转账等写操作。已有的 15 秒冷却适用于所有 AI 问答指令。
 
 ### 签到与积分系统
 

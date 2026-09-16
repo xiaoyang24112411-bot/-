@@ -5,6 +5,7 @@ import pytest
 import respx
 
 from src.config import DeepSeekSettings
+from src.services.ai_search import SearchSource
 from src.services.llm import DeepSeekError, ask_deepseek
 
 
@@ -83,3 +84,57 @@ async def test_deepseek_authentication_error():
 
     with pytest.raises(DeepSeekError, match="鉴权失败"):
         await ask_deepseek("你好", settings())
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_deep_thinking_and_search_sources():
+    route = respx.post("https://api.deepseek.com/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "答案见[1]。"}}]},
+        )
+    )
+    source = SearchSource("参考页", "https://example.com/one", "一段摘要")
+    reply = await ask_deepseek("最新情况？", settings(), deep=True, sources=(source,))
+    body = json.loads(route.calls[0].request.content)
+    assert body["thinking"] == {"type": "enabled"}
+    assert body["reasoning_effort"] == "high"
+    assert body["max_tokens"] == 4096
+    assert "一段摘要" in body["messages"][-1]["content"]
+    assert "https://example.com/one" in reply.text
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_read_only_tool_call(monkeypatch):
+    async def fake_tool(name: str, arguments: str) -> str:
+        assert name == "get_current_weather"
+        assert json.loads(arguments) == {"city": "北京"}
+        return '{"data":"北京 晴"}'
+
+    monkeypatch.setattr("src.services.llm.execute_readonly_tool", fake_tool)
+    route = respx.post("https://api.deepseek.com/chat/completions")
+    route.side_effect = [
+        httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {
+                    "role": "assistant",
+                    "content": None,
+                    "reasoning_content": "思考过程",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_current_weather", "arguments": '{"city":"北京"}'},
+                    }],
+                }}],
+            },
+        ),
+        httpx.Response(200, json={"choices": [{"message": {"content": "北京晴。"}}]}),
+    ]
+    reply = await ask_deepseek("北京天气？", settings(), deep=True)
+    followup = json.loads(route.calls[1].request.content)
+    assert followup["messages"][-2]["reasoning_content"] == "思考过程"
+    assert followup["messages"][-1]["role"] == "tool"
+    assert reply.text == "北京晴。"

@@ -54,6 +54,14 @@ class DeepSeekSettings:
     base_url: str
     timeout_seconds: float
     max_output_tokens: int
+    deep_max_output_tokens: int = 4096
+
+
+@dataclass(frozen=True)
+class WebSearchSettings:
+    api_key: str
+    base_url: str
+    timeout_seconds: float
 
 
 @dataclass(frozen=True)
@@ -121,6 +129,17 @@ def get_deepseek_settings() -> DeepSeekSettings:
         base_url=_get_value("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip().rstrip("/"),
         timeout_seconds=float(_get_value("DEEPSEEK_TIMEOUT_SECONDS", "60")),
         max_output_tokens=int(_get_value("DEEPSEEK_MAX_OUTPUT_TOKENS", "1200")),
+        deep_max_output_tokens=max(
+            2000, int(_get_value("DEEPSEEK_DEEP_MAX_OUTPUT_TOKENS", "4096"))
+        ),
+    )
+
+
+def get_web_search_settings() -> WebSearchSettings:
+    return WebSearchSettings(
+        api_key=_get_value("BRAVE_SEARCH_API_KEY").strip(),
+        base_url="https://api.search.brave.com/res/v1/llm/context",
+        timeout_seconds=max(5.0, float(_get_value("WEB_SEARCH_TIMEOUT_SECONDS", "20"))),
     )
 
 
