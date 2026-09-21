@@ -7,7 +7,12 @@ from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageSegment
 from nonebot.rule import Rule
 
 from src.services.ai_features import AIFeatureError
-from src.services.ai_features.personas import clear_persona, get_persona, set_persona
+from src.services.ai_features.personas import (
+    WHALE_PERSONA,
+    clear_persona,
+    get_persona,
+    set_persona,
+)
 from src.services.economy import get_economy_database
 from src.services.economy.commands import command_text
 from src.services.permissions import is_group_manager
@@ -57,14 +62,20 @@ async def handle_show_persona(event: GroupMessageEvent) -> None:
     persona = await get_persona(get_economy_database(), event.group_id, event.user_id)
     await show_ai_persona.finish(
         MessageSegment.at(event.user_id)
-        + (f" 当前人格：{persona}" if persona else " 当前没有设置自定义人格。")
+        + (
+            f" 当前附加人格：{persona}\n基础人格始终为“小鲸鱼”。"
+            if persona
+            else f" 当前使用默认小鲸鱼人格：\n{WHALE_PERSONA}"
+        )
     )
 
 
 @reset_ai_persona.handle()
 async def handle_reset_persona(event: GroupMessageEvent) -> None:
     await clear_persona(get_economy_database(), event.group_id, event.user_id)
-    await reset_ai_persona.finish(MessageSegment.at(event.user_id) + " 自定义人格已重置。")
+    await reset_ai_persona.finish(
+        MessageSegment.at(event.user_id) + " 自定义人格已重置，继续使用默认小鲸鱼人格。"
+    )
 
 
 @set_group_persona.handle()

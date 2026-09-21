@@ -9,7 +9,7 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from src.config import get_deepseek_settings, get_web_search_settings
-from src.services.ai_features.personas import get_persona
+from src.services.ai_features.personas import get_effective_persona
 from src.services.ai_search import WebSearchError, search_web
 from src.services.economy import get_economy_database
 from src.services.llm import DeepSeekError, ask_deepseek
@@ -81,7 +81,7 @@ async def _handle_ask(
 
     key = _conversation_key(event)
     history = conversation_history.setdefault(key, deque(maxlen=8))
-    persona = await get_persona(get_economy_database(), key[0], event.user_id)
+    persona = await get_effective_persona(get_economy_database(), key[0], event.user_id)
     try:
         sources = await search_web(prompt, get_web_search_settings()) if web else ()
         reply = await ask_deepseek(

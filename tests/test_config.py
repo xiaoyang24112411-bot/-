@@ -1,6 +1,8 @@
 from src import config
 from src.config import (
     get_app_settings,
+    get_auto_chat_settings,
+    get_deepseek_cost_settings,
     get_deepseek_settings,
     get_economy_settings,
     get_information_settings,
@@ -105,3 +107,28 @@ def test_information_settings(monkeypatch):
     assert settings.api_60s_base_url == "https://info.example/v2"
     assert settings.tmdb_access_token == "tmdb-token"
     assert settings.hot_search_limit == 20
+
+
+def test_auto_chat_settings_are_bounded(monkeypatch):
+    monkeypatch.setenv("AUTO_CHAT_TRIGGER_PERCENT", "0")
+    monkeypatch.setenv("AUTO_CHAT_MIN_MESSAGES", "20")
+    monkeypatch.setenv("AUTO_CHAT_CONTEXT_MESSAGES", "6")
+
+    settings = get_auto_chat_settings()
+
+    assert settings.trigger_percent == 1
+    assert settings.minimum_messages == settings.context_messages == 6
+
+
+def test_auto_chat_default_trigger_percent(monkeypatch, tmp_path):
+    monkeypatch.delenv("AUTO_CHAT_TRIGGER_PERCENT", raising=False)
+    monkeypatch.setattr(config, "ENV_FILE", tmp_path / "missing.env")
+    assert get_auto_chat_settings().trigger_percent == 80
+
+
+def test_peak_cost_protection_defaults_on(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_SUSPEND_AUTOCHAT_DURING_PEAK", raising=False)
+    assert get_deepseek_cost_settings().suspend_autochat_during_peak
+
+    monkeypatch.setenv("DEEPSEEK_SUSPEND_AUTOCHAT_DURING_PEAK", "false")
+    assert not get_deepseek_cost_settings().suspend_autochat_during_peak

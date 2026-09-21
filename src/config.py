@@ -10,6 +10,7 @@ from dotenv import dotenv_values
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENV_FILE = PROJECT_ROOT / ".env.prod"
 PERMANENT_ADMIN_IDS = frozenset({2448821316})
+AUTO_CHAT_CONTROLLER_ID = 2448821316
 
 
 def _as_bool(value: str | None, default: bool = False) -> bool:
@@ -100,6 +101,21 @@ class AIFeatureSettings:
     wordcloud_retention_days: int
     tts_max_characters: int
     tts_timeout_seconds: float
+
+
+@dataclass(frozen=True)
+class AutoChatSettings:
+    minimum_messages: int
+    context_messages: int
+    trigger_percent: int
+    context_ttl_seconds: int
+    quiet_start_hour: int
+    quiet_end_hour: int
+
+
+@dataclass(frozen=True)
+class DeepSeekCostSettings:
+    suspend_autochat_during_peak: bool
 
 
 @dataclass(frozen=True)
@@ -213,6 +229,32 @@ def get_ai_feature_settings() -> AIFeatureSettings:
         wordcloud_retention_days=min(90, max(1, int(_get_value("WORDCLOUD_RETENTION_DAYS", "30")))),
         tts_max_characters=min(1000, max(50, int(_get_value("TTS_MAX_CHARACTERS", "300")))),
         tts_timeout_seconds=max(10.0, float(_get_value("TTS_TIMEOUT_SECONDS", "45"))),
+    )
+
+
+def get_auto_chat_settings() -> AutoChatSettings:
+    context_messages = min(
+        30, max(6, int(_get_value("AUTO_CHAT_CONTEXT_MESSAGES", "12")))
+    )
+    minimum_messages = min(
+        context_messages, max(3, int(_get_value("AUTO_CHAT_MIN_MESSAGES", "6")))
+    )
+    return AutoChatSettings(
+        minimum_messages=minimum_messages,
+        context_messages=context_messages,
+        trigger_percent=min(100, max(1, int(_get_value("AUTO_CHAT_TRIGGER_PERCENT", "80")))),
+        context_ttl_seconds=max(300, int(_get_value("AUTO_CHAT_CONTEXT_TTL_SECONDS", "1200"))),
+        quiet_start_hour=min(23, max(0, int(_get_value("AUTO_CHAT_QUIET_START_HOUR", "0")))),
+        quiet_end_hour=min(23, max(0, int(_get_value("AUTO_CHAT_QUIET_END_HOUR", "7")))),
+    )
+
+
+def get_deepseek_cost_settings() -> DeepSeekCostSettings:
+    return DeepSeekCostSettings(
+        suspend_autochat_during_peak=_as_bool(
+            _get_value("DEEPSEEK_SUSPEND_AUTOCHAT_DURING_PEAK", "true"),
+            default=True,
+        )
     )
 
 

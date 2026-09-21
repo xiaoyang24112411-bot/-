@@ -87,7 +87,7 @@ async def normalize_petpet_message(bot: Bot, event: MessageEvent) -> None:
 
     if petpet_render_lock.locked():
         await bot.send(event, "当前有表情正在生成，请稍后再试。")
-        raise IgnoredException
+        raise IgnoredException("petpet renderer is busy")
     await petpet_render_lock.acquire()
     active_petpet_events.add(id(event))
 

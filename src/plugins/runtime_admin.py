@@ -40,6 +40,7 @@ HELP_TEXT = """====== Bot 完整指令 ======
 /深度联网问 问题　联网搜索 + 深度推理
 /记忆清除　清空自己的上下文
 设置人格 内容｜查看人格｜重置人格
+@机器人 内容　按小鲸鱼人格结合群聊回答（需开启；默认峰价暂停）
 
 【工具】
 /天气 城市
@@ -81,6 +82,7 @@ HELP_TEXT = """====== Bot 完整指令 ======
 /开启撤回记录｜/关闭撤回记录｜/查看撤回
 
 【机器人终极管理员】
+/开启自主回答｜/关闭自主回答｜/自主回答状态
 /status｜/echo 文本｜/API预设
 /reload｜/restart｜/stop（维护模式）｜/start"""
 
@@ -124,7 +126,7 @@ async def _exit_later() -> None:
 @event_preprocessor
 async def block_during_maintenance(event: MessageEvent) -> None:
     if maintenance_mode and not is_bot_admin(event):
-        raise IgnoredException
+        raise IgnoredException("bot is in maintenance mode")
 
 
 @help_command.handle()

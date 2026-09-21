@@ -9,7 +9,7 @@ import aiosqlite
 
 from src.config import get_economy_settings
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -238,6 +238,13 @@ CREATE TABLE IF NOT EXISTS ai_personas (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (group_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS ai_autochat_settings (
+    group_id INTEGER PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    updated_by INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS wordcloud_group_settings (
