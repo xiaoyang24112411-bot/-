@@ -11,7 +11,9 @@ from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageSegme
 from nonebot.exception import FinishedException
 
 from src.config import AutoChatSettings
+from src.services.ai_features import autochat as autochat_service
 from src.services.ai_features.autochat import AutoChatState, RecentChatBuffer
+from src.services.economy.database import EconomyDatabase
 from src.services.llm import DeepSeekError, DeepSeekReply
 
 
@@ -37,6 +39,7 @@ def plugin(monkeypatch):
     monkeypatch.setattr(ai_autochat, "enabled_cache", {100: (True, time.monotonic() + 60)})
     monkeypatch.setattr(ai_autochat, "switch_revisions", {})
     monkeypatch.setattr(ai_autochat, "mention_revisions", {})
+    monkeypatch.setattr(ai_autochat, "switch_locks", {})
     monkeypatch.setattr(ai_autochat, "active_requests", Counter())
     monkeypatch.setattr(ai_autochat, "_peak_suspended", lambda: False)
     monkeypatch.setattr(ai_autochat, "get_economy_database", lambda: None)
@@ -222,3 +225,58 @@ async def test_cancellation_releases_inflight_request(plugin, monkeypatch, proac
         with pytest.raises(asyncio.CancelledError):
             await task
     assert not plugin.active_requests
+
+
+async def test_rapid_enable_disable_keeps_database_and_cache_in_order(
+    plugin, monkeypatch, tmp_path
+):
+    database = EconomyDatabase(tmp_path / "switch-race.sqlite3")
+    real_get = autochat_service.get_autochat_state
+    assert not (await real_get(database, 100)).enabled
+    first_committed, release_read = asyncio.Event(), asyncio.Event()
+    disable_started, disable_write_started = asyncio.Event(), asyncio.Event()
+    delayed = False
+
+    async def paused_post_commit_read(*args):
+        nonlocal delayed
+        if not delayed:
+            delayed = True
+            first_committed.set()
+            await release_read.wait()
+        return await real_get(*args)
+
+    async def tracked_write(db, group_id, enabled, updated_by):
+        if not enabled:
+            disable_write_started.set()
+        return await autochat_service.set_autochat_enabled(db, group_id, enabled, updated_by)
+
+    async def change(handler, *, started=None):
+        if started is not None:
+            started.set()
+        with pytest.raises(FinishedException):
+            await handler(event(user_id=2448821316))
+
+    monkeypatch.setattr(autochat_service, "get_autochat_state", paused_post_commit_read)
+    monkeypatch.setattr(plugin, "get_economy_database", lambda: database)
+    monkeypatch.setattr(plugin, "set_autochat_enabled", tracked_write)
+    plugin.context_buffer.append(100, 20, "群友", "关闭后应清理")
+    enable_task = asyncio.create_task(change(plugin.handle_enable_autochat))
+    tasks = [enable_task]
+    try:
+        await asyncio.wait_for(first_committed.wait(), timeout=2)
+        assert (await real_get(database, 100)).enabled
+        tasks.append(asyncio.create_task(change(
+            plugin.handle_disable_autochat, started=disable_started
+        )))
+        await asyncio.wait_for(disable_started.wait(), timeout=2)
+        # The second handler is running, but cannot write while the first
+        # handler is between its real SQLite commit and cache update.
+        assert not disable_write_started.is_set()
+    finally:
+        release_read.set()
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=2)
+    assert not (await real_get(database, 100)).enabled
+    assert not await plugin._enabled(100)
+    assert plugin.switch_revisions[100] == 2
+    assert plugin.context_buffer.recent(100, limit=12, ttl_seconds=1200) == ()
+    assert not plugin.switch_locks[100].locked()

@@ -1,5 +1,6 @@
 """Opt-in @ replies and proactive participation for group chats."""
 
+import asyncio
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -37,6 +38,7 @@ enabled_cache: dict[int, tuple[bool, float]] = {}
 active_requests: Counter[int] = Counter()
 switch_revisions: dict[int, int] = {}
 mention_revisions: dict[int, int] = {}
+switch_locks: dict[int, asyncio.Lock] = {}
 
 PEAK_NOTICE = (
     "当前处于 DeepSeek 峰价时段，小鲸鱼的自动回答已暂停；"
@@ -134,14 +136,23 @@ async def _require_controller(matcher, event: GroupMessageEvent) -> None:
         )
 
 
+async def _change_switch(event: GroupMessageEvent, enabled: bool) -> None:
+    # The database setter awaits a read after committing. Serialize the complete
+    # write/cache update so an earlier command cannot overwrite a later switch.
+    async with switch_locks.setdefault(event.group_id, asyncio.Lock()):
+        await set_autochat_enabled(
+            get_economy_database(), event.group_id, enabled, event.user_id
+        )
+        enabled_cache[event.group_id] = (enabled, time.monotonic() + 60)
+        switch_revisions[event.group_id] = switch_revisions.get(event.group_id, 0) + 1
+        if not enabled:
+            context_buffer.clear(event.group_id)
+
+
 @enable_autochat.handle()
 async def handle_enable_autochat(event: GroupMessageEvent) -> None:
     await _require_controller(enable_autochat, event)
-    await set_autochat_enabled(
-        get_economy_database(), event.group_id, True, event.user_id
-    )
-    enabled_cache[event.group_id] = (True, time.monotonic() + 60)
-    switch_revisions[event.group_id] = switch_revisions.get(event.group_id, 0) + 1
+    await _change_switch(event, True)
     logger.info("Autochat enabled: group={}", event.group_id)
     settings = get_auto_chat_settings()
     peak_notice = (
@@ -158,12 +169,7 @@ async def handle_enable_autochat(event: GroupMessageEvent) -> None:
 @disable_autochat.handle()
 async def handle_disable_autochat(event: GroupMessageEvent) -> None:
     await _require_controller(disable_autochat, event)
-    await set_autochat_enabled(
-        get_economy_database(), event.group_id, False, event.user_id
-    )
-    enabled_cache[event.group_id] = (False, time.monotonic() + 60)
-    switch_revisions[event.group_id] = switch_revisions.get(event.group_id, 0) + 1
-    context_buffer.clear(event.group_id)
+    await _change_switch(event, False)
     logger.info("Autochat disabled: group={}", event.group_id)
     await disable_autochat.finish("本群自主回答已关闭；/问 等显式指令仍可正常使用。")
 
