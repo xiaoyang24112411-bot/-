@@ -8,8 +8,10 @@ from pathlib import Path
 import aiosqlite
 
 from src.config import get_economy_settings
+from src.services.group_polls_schema import GROUP_POLLS_SCHEMA_SQL
+from src.services.group_reminders_schema import GROUP_REMINDERS_SCHEMA_SQL
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -325,6 +327,9 @@ CREATE INDEX IF NOT EXISTS idx_rss_subscriptions_enabled
 CREATE INDEX IF NOT EXISTS idx_bili_subscriptions_enabled
     ON bili_subscriptions(enabled, group_id);
 """
+
+
+SCHEMA_SQL += GROUP_POLLS_SCHEMA_SQL + GROUP_REMINDERS_SCHEMA_SQL
 
 
 class EconomyDatabase:

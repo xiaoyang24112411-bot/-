@@ -130,6 +130,40 @@ class SubscriptionSettings:
 
 
 @dataclass(frozen=True)
+class CommunitySettings:
+    choices_enabled: bool = True
+    polls_enabled: bool = True
+    reminders_enabled: bool = True
+    polls_max_active_per_group: int = 5
+    reminder_poll_seconds: int = 5
+    reminders_max_active_per_user: int = 10
+    reminders_max_active_per_group: int = 100
+
+
+@lru_cache(maxsize=1)
+def get_community_settings() -> CommunitySettings:
+    """Local group utilities; edits take effect after restarting the bot."""
+    def integer(name: str, default: int, maximum: int) -> int:
+        try:
+            value = int(_get_value(name, str(default)))
+        except ValueError as exc:
+            raise ValueError(f"{name} 必须是整数") from exc
+        if not 1 <= value <= maximum:
+            raise ValueError(f"{name} 必须在 1～{maximum} 之间")
+        return value
+
+    return CommunitySettings(
+        choices_enabled=_as_bool(_get_value("GROUP_CHOICES_ENABLED", "true")),
+        polls_enabled=_as_bool(_get_value("GROUP_POLLS_ENABLED", "true")),
+        reminders_enabled=_as_bool(_get_value("GROUP_REMINDERS_ENABLED", "true")),
+        polls_max_active_per_group=integer("GROUP_POLLS_MAX_ACTIVE", 5, 50),
+        reminder_poll_seconds=integer("GROUP_REMINDER_POLL_SECONDS", 5, 60),
+        reminders_max_active_per_user=integer("GROUP_REMINDER_MAX_PER_USER", 10, 100),
+        reminders_max_active_per_group=integer("GROUP_REMINDER_MAX_PER_GROUP", 100, 1000),
+    )
+
+
+@dataclass(frozen=True)
 class GreetingSettings:
     enabled: bool = True
     group_ids: frozenset[int] = frozenset()

@@ -70,7 +70,7 @@ async def test_database_schema_and_daily_checkin(tmp_path):
     assert other_group.balance == 0
     async with database.connect() as connection:
         cursor = await connection.execute("SELECT MAX(version) AS version FROM schema_migrations")
-        assert (await cursor.fetchone())["version"] == 8
+        assert (await cursor.fetchone())["version"] == 9
 
 
 @pytest.mark.asyncio
