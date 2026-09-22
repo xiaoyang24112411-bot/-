@@ -1,8 +1,10 @@
 """Small application-specific settings layered on top of NoneBot settings."""
 
+import json
 import os
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -125,6 +127,80 @@ class SubscriptionSettings:
     bilibili_api_base_url: str
     bilibili_live_api_base_url: str
     bilibili_sessdata: str
+
+
+@dataclass(frozen=True)
+class GreetingSettings:
+    enabled: bool = True
+    group_ids: frozenset[int] = frozenset()
+    ignored_user_ids: frozenset[int] = frozenset()
+    user_cooldown_seconds: int = 0
+    group_cooldown_seconds: int = 0
+    morning_words: tuple[str, ...] = ("早安", "早上好", "早晨好")
+    night_words: tuple[str, ...] = ("晚安", "晚上好")
+    morning_replies: tuple[str, ...] = (
+        "早安！愿你今天有个好心情 ☀️",
+        "早上好呀，记得吃早餐！",
+        "新的一天开始啦，祝你一切顺利～",
+        "早安，今天也要好好照顾自己呀。",
+        "早呀！愿今天有开心的小事发生。",
+    )
+    night_replies: tuple[str, ...] = (
+        "晚安呀，祝你做个好梦 🌙",
+        "辛苦一天啦，好好休息吧。",
+        "晚安，愿你今晚睡得安稳。",
+        "把烦恼暂时放下，明天再慢慢来～",
+        "好梦呀，醒来又是新的一天！",
+    )
+
+
+def _greeting_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = _get_value(name).strip()
+    if not raw:
+        return default
+    try:
+        values = json.loads(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} 必须是非空 JSON 字符串数组") from exc
+    if (
+        not isinstance(values, list) or not values
+        or any(not isinstance(value, str) or not value.strip() for value in values)
+    ):
+        raise ValueError(f"{name} 必须是非空 JSON 字符串数组")
+    return tuple(dict.fromkeys(value.strip() for value in values))
+
+
+@lru_cache(maxsize=1)
+def get_greeting_settings() -> GreetingSettings:
+    """Read once at startup, like the group-management plugin; restart to apply edits."""
+    defaults = GreetingSettings()
+    cooldowns = {}
+    for name, default in (
+        ("GREETING_USER_COOLDOWN_SECONDS", 0),
+        ("GREETING_GROUP_COOLDOWN_SECONDS", 0),
+    ):
+        try:
+            seconds = int(_get_value(name, str(default)))
+        except ValueError as exc:
+            raise ValueError(f"{name} 必须是非负整数秒数") from exc
+        if seconds < 0:
+            raise ValueError(f"{name} 必须是非负整数秒数")
+        cooldowns[name] = seconds
+    morning_words = _greeting_list("GREETING_MORNING_WORDS", defaults.morning_words)
+    night_words = _greeting_list("GREETING_NIGHT_WORDS", defaults.night_words)
+    if set(morning_words) & set(night_words):
+        raise ValueError("早安和晚安触发词不能重复")
+    return GreetingSettings(
+        enabled=_as_bool(_get_value("GREETING_ENABLED", "true")),
+        group_ids=_as_user_ids(_get_value("GREETING_GROUP_IDS")),
+        ignored_user_ids=_as_user_ids(_get_value("GREETING_IGNORED_USER_IDS")),
+        user_cooldown_seconds=cooldowns["GREETING_USER_COOLDOWN_SECONDS"],
+        group_cooldown_seconds=cooldowns["GREETING_GROUP_COOLDOWN_SECONDS"],
+        morning_words=morning_words,
+        night_words=night_words,
+        morning_replies=_greeting_list("GREETING_MORNING_REPLIES", defaults.morning_replies),
+        night_replies=_greeting_list("GREETING_NIGHT_REPLIES", defaults.night_replies),
+    )
 
 
 def get_app_settings() -> AppSettings:

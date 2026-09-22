@@ -5,7 +5,7 @@ import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from nonebot import logger, on_message
+from nonebot import get_bots, logger, on_message
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageSegment
 from nonebot.rule import Rule
 
@@ -14,6 +14,7 @@ from src.config import (
     get_auto_chat_settings,
     get_deepseek_cost_settings,
     get_deepseek_settings,
+    get_greeting_settings,
 )
 from src.services.ai_features.autochat import (
     RecentChatBuffer,
@@ -30,6 +31,7 @@ from src.services.deepseek_pricing import (
 )
 from src.services.economy import get_economy_database
 from src.services.economy.commands import command_text
+from src.services.greetings import classify_group_greeting
 from src.services.llm import DeepSeekError, ask_deepseek
 
 SKIP_TOKEN = "[[SKIP]]"
@@ -85,7 +87,10 @@ async def _enabled(group_id: int) -> bool:
 
 
 async def _mention_rule(event) -> bool:
-    return isinstance(event, GroupMessageEvent) and _is_at_bot(event)
+    return (
+        isinstance(event, GroupMessageEvent) and _is_at_bot(event)
+        and classify_group_greeting(event, get_greeting_settings(), get_bots()) is None
+    )
 
 
 async def _reply_allowed(group_id: int, revision: int) -> bool:
@@ -265,6 +270,9 @@ async def handle_mention_chat(event: GroupMessageEvent) -> None:
 
 @proactive_chat.handle()
 async def handle_proactive_chat(event: GroupMessageEvent) -> None:
+    # Greetings, including cooldown hits, must not fall back to a paid AI reply.
+    if classify_group_greeting(event, get_greeting_settings(), get_bots()) is not None:
+        return
     text = event.get_plaintext().strip()
     if event.user_id == event.self_id or not text or text.startswith(("/", "#")):
         return
