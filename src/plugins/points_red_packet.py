@@ -8,7 +8,11 @@ from nonebot.rule import Rule
 
 from src.config import get_economy_settings
 from src.services.economy import EconomyError, get_economy_database
-from src.services.economy.commands import command_text, message_request_id
+from src.services.economy.commands import (
+    command_text,
+    message_request_id,
+    parse_positive_integers,
+)
 from src.services.economy.red_packets import claim_red_packet, create_red_packet
 
 
@@ -27,17 +31,17 @@ claim_packet = on_message(rule=Rule(is_claim_packet), priority=10, block=True)
 @create_packet.handle()
 async def handle_create_packet(event: GroupMessageEvent) -> None:
     argument = command_text(event, "发红包") or ""
-    numbers = re.findall(r"(?<!\d)\d+(?!\d)", argument)
-    if len(numbers) != 2:
+    if not argument:
         await create_packet.finish("用法：发红包 总积分 份数\n例如：发红包 100 5")
     settings = get_economy_settings()
     try:
+        total_amount, total_count = parse_positive_integers(argument, 2)
         packet = await create_red_packet(
             get_economy_database(),
             group_id=event.group_id,
             sender_user_id=event.user_id,
-            total_amount=int(numbers[0]),
-            total_count=int(numbers[1]),
+            total_amount=total_amount,
+            total_count=total_count,
             request_id=message_request_id(event, "packet-create"),
             ttl_seconds=settings.red_packet_ttl_seconds,
         )

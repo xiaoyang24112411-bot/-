@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -28,7 +28,7 @@ async def test_persona_and_opt_in_wordcloud_storage(tmp_path):
     assert await get_persona(database, 1, 10) == "用侦探口吻简洁回答"
     assert await clear_persona(database, 1, 10) is True
 
-    now = datetime(2026, 8, 30, 8, 0, tzinfo=UTC)
+    now = datetime(2026, 8, 30, 8, 0, tzinfo=timezone.utc)
     assert not await record_wordcloud_message(database, 1, 10, "尚未开启", now=now)
     await set_wordcloud_enabled(database, 1, True, 99, 30)
     messages = (

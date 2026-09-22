@@ -1,9 +1,12 @@
 """NoneBot application entrypoint."""
 
+from pathlib import Path
+
 import nonebot
 from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter
 
 from src.compat.pillow import apply_pillow_compatibility
+from src.services.economy import get_economy_database
 
 
 def main() -> None:
@@ -14,8 +17,14 @@ def main() -> None:
     if nonebot.load_plugin("nonebot_plugin_petpet") is None:
         raise RuntimeError("Failed to load nonebot_plugin_petpet")
     local_plugins = nonebot.load_plugins("src/plugins")
-    if "petpet_compat" not in {plugin.name for plugin in local_plugins}:
-        raise RuntimeError("Failed to load petpet compatibility plugin")
+    expected = {
+        path.stem for path in Path("src/plugins").glob("*.py")
+        if not path.name.startswith("_")
+    }
+    missing = expected - {plugin.name for plugin in local_plugins}
+    if missing:
+        raise RuntimeError(f"Failed to load plugins: {', '.join(sorted(missing))}")
+    driver.on_startup(get_economy_database().initialize)
     nonebot.run()
 
 

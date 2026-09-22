@@ -138,3 +138,20 @@ async def test_read_only_tool_call(monkeypatch):
     assert followup["messages"][-2]["reasoning_content"] == "思考过程"
     assert followup["messages"][-1]["role"] == "tool"
     assert reply.text == "北京晴。"
+
+
+@respx.mock
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [
+    [],
+    {"choices": []},
+    {"choices": [{"message": []}]},
+    {"choices": [{"message": {"content": "", "tool_calls": "bad"}}]},
+    {"choices": [{"message": {"content": "  "}}]},
+])
+async def test_malformed_responses_raise_safe_error(payload):
+    respx.post("https://api.deepseek.com/chat/completions").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    with pytest.raises(DeepSeekError):
+        await ask_deepseek("测试", settings())

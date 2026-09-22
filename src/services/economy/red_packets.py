@@ -1,6 +1,7 @@
 """Point red packet creation, claiming, and expiry refunds."""
 
 import random
+import re
 from dataclasses import dataclass
 from datetime import timedelta
 from uuid import uuid4
@@ -128,6 +129,10 @@ async def claim_red_packet(
     packet_token: str | None = None,
     rng: random.Random | None = None,
 ) -> ClaimResult:
+    if packet_token is not None:
+        packet_token = packet_token.strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{4,32}", packet_token):
+            raise EconomyError("红包编号格式不正确，请使用收到的红包编号。")
     now = iso_time()
     generator = rng or random.SystemRandom()
     expired = False
@@ -143,16 +148,20 @@ async def claim_red_packet(
         if packet_token:
             cursor = await connection.execute(
                 "SELECT * FROM red_packets WHERE group_id = ? AND id LIKE ? "
-                "ORDER BY created_at DESC LIMIT 1",
-                (group_id, f"{packet_token.lower()}%"),
+                "LIMIT 2",
+                (group_id, f"{packet_token}%"),
             )
+            packets = await cursor.fetchall()
+            if len(packets) > 1:
+                raise EconomyError("红包编号匹配到多个红包，请提供更完整的红包编号。")
+            packet = packets[0] if packets else None
         else:
             cursor = await connection.execute(
                 "SELECT * FROM red_packets WHERE group_id = ? AND status = 'open' "
                 "ORDER BY created_at DESC LIMIT 1",
                 (group_id,),
             )
-        packet = await cursor.fetchone()
+            packet = await cursor.fetchone()
         if packet is None:
             raise EconomyError("当前没有可领取的积分红包。")
 

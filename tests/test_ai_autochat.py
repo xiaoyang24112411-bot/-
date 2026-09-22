@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -42,7 +42,7 @@ async def test_autochat_switch(tmp_path):
 
 def test_recent_context_and_sampling():
     buffer = RecentChatBuffer(maximum_messages=5)
-    now = datetime(2026, 9, 21, 12, 0, tzinfo=UTC)
+    now = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
     buffer.append(1, 10, "甲", "第一句", now=now - timedelta(minutes=30))
     buffer.append(1, 10, "甲", "你们觉得呢？", now=now)
     buffer.append(1, 20, "乙", "我觉得可以", now=now)
@@ -51,6 +51,32 @@ def test_recent_context_and_sampling():
     assert [line.text for line in lines] == ["你们觉得呢？", "我觉得可以", "为什么呢？"]
     assert should_sample_reply(lines, settings(), china_hour=20, random_value=lambda: 0.19)
     assert not should_sample_reply(lines, settings(), china_hour=1, random_value=lambda: 0)
+
+
+def test_context_expires_inactive_groups_and_can_be_cleared():
+    buffer = RecentChatBuffer()
+    now = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+    buffer.append(1, 10, "甲", "过期的聊天", now=now - timedelta(minutes=30))
+    buffer.append(2, 20, "乙", "新的聊天", now=now)
+    assert buffer.recent(2, limit=0, ttl_seconds=1200, now=now) == ()
+    assert 1 not in buffer._lines
+    buffer.clear(2)
+    assert buffer.recent(2, limit=5, ttl_seconds=1200, now=now) == ()
+
+
+def test_bot_does_not_count_as_second_group_participant():
+    buffer = RecentChatBuffer()
+    buffer.append(1, 10, "甲", "第一句")
+    buffer.append(1, 99, "小鲸鱼", "回答")
+    buffer.append(1, 10, "甲", "下一句？")
+    lines = buffer.recent(1, limit=5, ttl_seconds=1200)
+    assert not should_sample_reply(
+        lines, settings(minimum_messages=2), china_hour=20, bot_id=99, random_value=lambda: 0
+    )
+
+
+def test_empty_context_never_samples_a_reply():
+    assert not should_sample_reply((), settings(minimum_messages=0), china_hour=20)
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,7 @@
 
 import random
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from src.services.economy.common import iso_time
 from src.services.economy.database import EconomyDatabase
@@ -85,10 +85,10 @@ async def cultivate(
     now: datetime | None = None,
     rng: random.Random | None = None,
 ) -> CultivateResult:
-    current = now or datetime.now(UTC)
+    current = now or datetime.now(timezone.utc)
     if current.tzinfo is None:
-        current = current.replace(tzinfo=UTC)
-    current = current.astimezone(UTC)
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(timezone.utc)
     timestamp = iso_time(current)
     generator = rng or random.SystemRandom()
 

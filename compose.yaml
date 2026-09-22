@@ -9,6 +9,14 @@ services:
     cpus: 0.80
     env_file:
       - .env.prod
+    environment:
+      TZ: Asia/Shanghai
+    healthcheck:
+      test: ["CMD", "python", "-m", "src.services.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
     volumes:
       - petpet-data:/app/data/petpet
       - economy-data:/app/data/economy

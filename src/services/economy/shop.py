@@ -1,7 +1,10 @@
 """Per-group shop products and atomic redemption orders."""
 
+import re
 from dataclasses import dataclass
 from uuid import uuid4
+
+import aiosqlite
 
 from .common import account_balance, apply_change, ensure_account, iso_time
 from .database import EconomyDatabase
@@ -213,6 +216,24 @@ async def redeem_product(
     return OrderResult(order_id, product["name"], quantity, total_price, balance)
 
 
+async def _find_order(
+    connection: aiosqlite.Connection, group_id: int, order_token: str
+) -> aiosqlite.Row:
+    token = order_token.strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{4,32}", token):
+        raise EconomyError("订单号格式不正确，请使用收到的订单编号。")
+    cursor = await connection.execute(
+        "SELECT * FROM shop_orders WHERE group_id = ? AND id LIKE ? LIMIT 2",
+        (group_id, f"{token}%"),
+    )
+    orders = await cursor.fetchall()
+    if not orders:
+        raise EconomyError("没有找到这个订单。")
+    if len(orders) > 1:
+        raise EconomyError("订单号匹配到多个订单，请提供更完整的订单编号。")
+    return orders[0]
+
+
 async def fulfill_order(
     database: EconomyDatabase,
     *,
@@ -222,14 +243,7 @@ async def fulfill_order(
 ) -> str:
     now = iso_time()
     async with database.transaction() as connection:
-        cursor = await connection.execute(
-            "SELECT id, status FROM shop_orders WHERE group_id = ? AND id LIKE ? "
-            "ORDER BY created_at DESC LIMIT 1",
-            (group_id, f"{order_token.lower()}%"),
-        )
-        order = await cursor.fetchone()
-        if order is None:
-            raise EconomyError("没有找到这个订单。")
+        order = await _find_order(connection, group_id, order_token)
         if order["status"] != "pending":
             raise EconomyError("该订单已经处理过了。")
         await connection.execute(
@@ -248,14 +262,7 @@ async def refund_order(
 ) -> OrderResult:
     now = iso_time()
     async with database.transaction() as connection:
-        cursor = await connection.execute(
-            "SELECT * FROM shop_orders WHERE group_id = ? AND id LIKE ? "
-            "ORDER BY created_at DESC LIMIT 1",
-            (group_id, f"{order_token.lower()}%"),
-        )
-        order = await cursor.fetchone()
-        if order is None:
-            raise EconomyError("没有找到这个订单。")
+        order = await _find_order(connection, group_id, order_token)
         if order["status"] != "pending":
             raise EconomyError("只有待核销订单可以退款。")
 

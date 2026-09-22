@@ -2,7 +2,7 @@
 
 import random
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from src.services.economy.common import (
     account_balance,
@@ -40,10 +40,10 @@ async def play_roulette(
     if wager > max_wager:
         raise EconomyError(f"单次最多投入 {max_wager} 积分。")
 
-    current = now or datetime.now(UTC)
+    current = now or datetime.now(timezone.utc)
     if current.tzinfo is None:
-        current = current.replace(tzinfo=UTC)
-    current = current.astimezone(UTC)
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(timezone.utc)
     timestamp = iso_time(current)
     generator = rng or random.SystemRandom()
 

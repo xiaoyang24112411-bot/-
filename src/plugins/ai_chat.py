@@ -81,8 +81,8 @@ async def _handle_ask(
 
     key = _conversation_key(event)
     history = conversation_history.setdefault(key, deque(maxlen=8))
-    persona = await get_effective_persona(get_economy_database(), key[0], event.user_id)
     try:
+        persona = await get_effective_persona(get_economy_database(), key[0], event.user_id)
         sources = await search_web(prompt, get_web_search_settings()) if web else ()
         reply = await ask_deepseek(
             prompt,

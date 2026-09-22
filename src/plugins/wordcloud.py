@@ -118,7 +118,10 @@ async def handle_create_wordcloud(event: GroupMessageEvent) -> None:
 
 async def _finish_period_wordcloud(matcher, event: GroupMessageEvent, days: int) -> None:
     try:
-        messages = await get_wordcloud_messages(get_economy_database(), event.group_id, days)
+        messages = await get_wordcloud_messages(
+            get_economy_database(), event.group_id, days,
+            period="today" if days == 1 else "week",
+        )
         font = resolve_wordcloud_font(get_ai_feature_settings().wordcloud_font_path)
         image = await asyncio.to_thread(generate_wordcloud, messages, font)
     except AIFeatureError as exc:

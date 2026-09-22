@@ -1,5 +1,5 @@
 import random
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -58,7 +58,7 @@ def test_dice_and_life_simulator_are_bounded():
 async def test_roulette_settles_points_and_enforces_cooldown(tmp_path):
     database = EconomyDatabase(tmp_path / "roulette.sqlite3")
     await seed_points(database, 100)
-    now = datetime(2026, 8, 30, 8, 0, tzinfo=UTC)
+    now = datetime(2026, 8, 30, 8, 0, tzinfo=timezone.utc)
     safe = await play_roulette(
         database,
         group_id=1,
@@ -110,7 +110,7 @@ async def test_cultivation_cooldown_and_breakthrough(tmp_path):
     database = EconomyDatabase(tmp_path / "cultivation.sqlite3")
     profile = await get_cultivation_profile(database, 1, 10)
     assert profile.realm_name == "炼气"
-    now = datetime(2026, 8, 30, 8, 0, tzinfo=UTC)
+    now = datetime(2026, 8, 30, 8, 0, tzinfo=timezone.utc)
     result = await cultivate(
         database,
         group_id=1,

@@ -14,7 +14,9 @@ from nonebot.message import event_preprocessor
 from nonebot.params import CommandArg
 
 from src.config import get_deepseek_settings
+from src.services.economy import get_economy_database
 from src.services.permissions import is_bot_admin
+from src.services.runtime_health import runtime_health
 
 STARTED_AT = time.monotonic()
 maintenance_mode = False
@@ -143,8 +145,11 @@ async def handle_full_help() -> None:
 async def handle_status(event: MessageEvent) -> None:
     await _require_admin(status_command, event)
     plugins = sorted(plugin.name for plugin in nonebot.get_loaded_plugins())
+    health = await runtime_health(get_economy_database(), dict(nonebot.get_bots()))
     await status_command.finish(
-        "机器人运行正常\n"
+        f"机器人状态：{'正常' if health['status'] == 'ok' else '需要检查'}\n"
+        f"QQ 在线：{health['online_accounts']}/{health['connected_accounts']}\n"
+        f"数据库：{'正常' if health['database'] == 'ok' else '不可用'}\n"
         f"Python：{sys.version.split()[0]}\n"
         f"运行时间：{_uptime()}\n"
         f"内存：{_memory_megabytes()}\n"

@@ -4,7 +4,7 @@ import random
 from collections import defaultdict, deque
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.config import AutoChatSettings
 from src.services.economy.common import iso_time
@@ -50,7 +50,7 @@ class RecentChatBuffer:
                 user_id=user_id,
                 display_name=" ".join(display_name.split()).strip()[:40] or str(user_id),
                 text=value,
-                created_at=now or datetime.now(UTC),
+                created_at=now or datetime.now(timezone.utc),
             )
         )
 
@@ -62,10 +62,24 @@ class RecentChatBuffer:
         ttl_seconds: int,
         now: datetime | None = None,
     ) -> tuple[ChatLine, ...]:
-        current = now or datetime.now(UTC)
+        current = now or datetime.now(timezone.utc)
         cutoff = current - timedelta(seconds=ttl_seconds)
-        lines = self._lines.get(group_id, ())
-        return tuple(line for line in lines if line.created_at >= cutoff)[-limit:]
+        # Also evict inactive groups: filtering only the requested group's result
+        # would retain old conversation text in memory indefinitely.
+        for stored_group, lines in tuple(self._lines.items()):
+            remaining = deque(
+                (line for line in lines if line.created_at >= cutoff), maxlen=lines.maxlen
+            )
+            if remaining:
+                self._lines[stored_group] = remaining
+            else:
+                del self._lines[stored_group]
+        if limit <= 0:
+            return ()
+        return tuple(self._lines.get(group_id, ()))[-limit:]
+
+    def clear(self, group_id: int) -> None:
+        self._lines.pop(group_id, None)
 
 
 async def get_autochat_state(database: EconomyDatabase, group_id: int) -> AutoChatState:
@@ -111,13 +125,15 @@ def should_sample_reply(
     settings: AutoChatSettings,
     *,
     china_hour: int,
+    bot_id: int | None = None,
     random_value: Callable[[], float] = random.random,
 ) -> bool:
     if in_quiet_hours(china_hour, settings.quiet_start_hour, settings.quiet_end_hour):
         return False
-    if len(lines) < settings.minimum_messages:
+    human_lines = tuple(line for line in lines if line.user_id != bot_id)
+    if not lines or len(human_lines) < settings.minimum_messages:
         return False
-    if len({line.user_id for line in lines}) < 2:
+    if len({line.user_id for line in human_lines}) < 2:
         return False
     latest = lines[-1].text
     if latest.startswith(("/", "#")) or len(latest) > 300:

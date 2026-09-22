@@ -2,7 +2,7 @@
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -73,10 +73,10 @@ async def search_yugioh_card(
 
     api_query = CHINESE_ALIASES.get(original_query, original_query)
     query_key = api_query.casefold()
-    current = now or datetime.now(UTC)
+    current = now or datetime.now(timezone.utc)
     if current.tzinfo is None:
-        current = current.replace(tzinfo=UTC)
-    current = current.astimezone(UTC)
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(timezone.utc)
 
     async with database.connect() as connection:
         cursor = await connection.execute(

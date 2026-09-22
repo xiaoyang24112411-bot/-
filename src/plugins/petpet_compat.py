@@ -2,12 +2,14 @@
 
 import asyncio
 import re
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
 from nonebot.exception import IgnoredException
 from nonebot.log import logger
-from nonebot.message import event_postprocessor, event_preprocessor
+from nonebot.message import event_preprocessor
+from nonebot.params import Depends
 from nonebot_plugin_imageutils.fonts import add_font
 from nonebot_plugin_petpet import depends as petpet_depends
 from nonebot_plugin_petpet import download as petpet_download
@@ -54,6 +56,20 @@ petpet_render_lock = asyncio.Lock()
 active_petpet_events: set[int] = set()
 
 
+async def petpet_event_scope(event: MessageEvent) -> AsyncIterator[None]:
+    """Release our lock even when a different preprocessor ignores the event.
+
+    NoneBot closes generator dependencies with its event-scoped exit stack, but
+    skips event postprocessors when preprocessing fails or ignores an event.
+    """
+    try:
+        yield
+    finally:
+        if id(event) in active_petpet_events:
+            active_petpet_events.remove(id(event))
+            petpet_render_lock.release()
+
+
 def is_registered_petpet_command(text: str) -> bool:
     command = text.lstrip()
     if command.startswith("/"):
@@ -65,7 +81,9 @@ def is_registered_petpet_command(text: str) -> bool:
 
 
 @event_preprocessor
-async def normalize_petpet_message(bot: Bot, event: MessageEvent) -> None:
+async def normalize_petpet_message(
+    bot: Bot, event: MessageEvent, _scope: None = Depends(petpet_event_scope)  # noqa: B008
+) -> None:
     message = event.get_message()
     if not message or not message[0].is_text():
         return
@@ -95,13 +113,3 @@ async def normalize_petpet_message(bot: Bot, event: MessageEvent) -> None:
     message[0].data["text"] = normalized
     if not has_explicit_target(message, normalized):
         message.append(MessageSegment.text(" 自己"))
-
-
-@event_postprocessor
-async def release_petpet_render_lock(event: MessageEvent) -> None:
-    event_id = id(event)
-    if event_id not in active_petpet_events:
-        return
-    active_petpet_events.remove(event_id)
-    if petpet_render_lock.locked():
-        petpet_render_lock.release()

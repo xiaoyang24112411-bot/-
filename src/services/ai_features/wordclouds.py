@@ -3,9 +3,10 @@
 import re
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
+from typing import Literal
 
 import jieba
 from wordcloud import WordCloud
@@ -101,7 +102,7 @@ async def record_wordcloud_message(
     message = normalize_message(text)
     if len(message) < 2:
         return False
-    current = (now or datetime.now(UTC)).astimezone(UTC)
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     async with database.transaction() as connection:
         cursor = await connection.execute(
             "SELECT enabled, retention_days FROM wordcloud_group_settings WHERE group_id = ?",
@@ -137,14 +138,38 @@ async def get_wordcloud_messages(
     days: int,
     *,
     now: datetime | None = None,
+    period: Literal["rolling", "today", "week"] = "rolling",
 ) -> tuple[str, ...]:
-    current = (now or datetime.now(UTC)).astimezone(UTC)
-    cutoff = iso_time(current - timedelta(days=min(90, max(1, days))))
-    async with database.connect() as connection:
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if period == "rolling":
+        start = current - timedelta(days=min(90, max(1, days)))
+    else:
+        china_now = current.astimezone(timezone(timedelta(hours=8)))
+        start = china_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if period == "week":
+            start -= timedelta(days=china_now.weekday())
+        elif period != "today":
+            raise ValueError(f"Unsupported word-cloud period: {period}")
+    cutoff = iso_time(start.astimezone(timezone.utc))
+    async with database.transaction() as connection:
+        cursor = await connection.execute(
+            "SELECT retention_days FROM wordcloud_group_settings WHERE group_id = ?",
+            (group_id,),
+        )
+        setting = await cursor.fetchone()
+        # Turning recording off must not freeze expiry. Prune on statistics
+        # reads too, using the group's retention rather than the selected period.
+        if setting is not None:
+            retention_cutoff = current - timedelta(days=int(setting["retention_days"]))
+            await connection.execute(
+                "DELETE FROM wordcloud_messages WHERE group_id = ? AND created_at < ?",
+                (group_id, iso_time(retention_cutoff)),
+            )
         cursor = await connection.execute(
             "SELECT message_text FROM wordcloud_messages "
-            "WHERE group_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 5000",
-            (group_id, cutoff),
+            "WHERE group_id = ? AND created_at >= ? AND created_at <= ? "
+            "ORDER BY created_at DESC LIMIT 5000",
+            (group_id, cutoff, iso_time(current)),
         )
         rows = await cursor.fetchall()
     return tuple(str(row["message_text"]) for row in rows)

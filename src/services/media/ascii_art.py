@@ -15,13 +15,19 @@ async def download_image(url: str, max_bytes: int = 8 * 1024 * 1024) -> bytes:
         raise EconomyError("暂不支持这种图片地址，请使用群内上传的图片。")
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            response = await client.get(url)
-            response.raise_for_status()
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                size = response.headers.get("content-length", "")
+                if size.isdigit() and int(size) > max_bytes:
+                    raise EconomyError("图片超过允许的大小，无法转换。")
+                content = bytearray()
+                async for chunk in response.aiter_bytes(chunk_size=64 * 1024):
+                    if len(content) + len(chunk) > max_bytes:
+                        raise EconomyError("图片超过允许的大小，无法转换。")
+                    content.extend(chunk)
     except httpx.HTTPError as exc:
         raise EconomyError("图片下载失败，请重新上传后再试。") from exc
-    if len(response.content) > max_bytes:
-        raise EconomyError("图片超过 8 MB，无法转换。")
-    return response.content
+    return bytes(content)
 
 
 def image_to_ascii(image_bytes: bytes, width: int = 36) -> str:

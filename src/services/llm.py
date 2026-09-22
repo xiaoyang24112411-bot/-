@@ -104,9 +104,15 @@ async def ask_deepseek(
                 raise DeepSeekError("DeepSeek 服务暂时不可用，请稍后再试。")
             response.raise_for_status()
             payload = response.json()
+            if not isinstance(payload, dict):
+                raise DeepSeekError("DeepSeek 返回的数据格式无效，请稍后再试。")
             message = payload["choices"][0]["message"]
+            if not isinstance(message, dict):
+                raise DeepSeekError("DeepSeek 返回的数据格式无效，请稍后再试。")
             content = message.get("content")
             tool_calls = message.get("tool_calls") or []
+            if not isinstance(tool_calls, list):
+                raise DeepSeekError("DeepSeek 返回的数据格式无效，请稍后再试。")
             if tool_calls:
                 if round_index == 2:
                     raise DeepSeekError("查询步骤过多，请缩小问题范围后重试。")

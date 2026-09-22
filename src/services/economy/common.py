@@ -1,12 +1,12 @@
 """Internal account and ledger primitives used inside SQLite transactions."""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import aiosqlite
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def iso_time(value: datetime | None = None) -> str:

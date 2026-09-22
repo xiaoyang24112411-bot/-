@@ -1,7 +1,8 @@
-"""Opt-in @ replies and low-frequency proactive participation for group chats."""
+"""Opt-in @ replies and proactive participation for group chats."""
 
 import time
-from datetime import UTC, datetime, timedelta
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 
 from nonebot import logger, on_message
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageSegment
@@ -33,6 +34,14 @@ from src.services.llm import DeepSeekError, ask_deepseek
 SKIP_TOKEN = "[[SKIP]]"
 context_buffer = RecentChatBuffer()
 enabled_cache: dict[int, tuple[bool, float]] = {}
+active_requests: Counter[int] = Counter()
+switch_revisions: dict[int, int] = {}
+mention_revisions: dict[int, int] = {}
+
+PEAK_NOTICE = (
+    "当前处于 DeepSeek 峰价时段，小鲸鱼的自动回答已暂停；"
+    "谷价时会自动恢复。需要立即提问仍可使用 /问。"
+)
 
 
 def _peak_suspended() -> bool:
@@ -64,17 +73,28 @@ async def _enabled(group_id: int) -> bool:
     now = time.monotonic()
     if cached and now < cached[1]:
         return cached[0]
+    revision = switch_revisions.get(group_id, 0)
     state = await get_autochat_state(get_economy_database(), group_id)
+    if switch_revisions.get(group_id, 0) != revision:
+        # A controller command completed while SQLite was being read.
+        return enabled_cache[group_id][0]
     enabled_cache[group_id] = (state.enabled, now + 60)
     return state.enabled
 
 
 async def _mention_rule(event) -> bool:
-    return (
-        isinstance(event, GroupMessageEvent)
-        and _is_at_bot(event)
-        and await _enabled(event.group_id)
-    )
+    return isinstance(event, GroupMessageEvent) and _is_at_bot(event)
+
+
+async def _reply_allowed(group_id: int, revision: int) -> bool:
+    enabled = await _enabled(group_id)
+    return enabled and switch_revisions.get(group_id, 0) == revision
+
+
+def _release_request(group_id: int) -> None:
+    active_requests[group_id] -= 1
+    if active_requests[group_id] <= 0:
+        del active_requests[group_id]
 
 
 enable_autochat = on_message(
@@ -121,6 +141,8 @@ async def handle_enable_autochat(event: GroupMessageEvent) -> None:
         get_economy_database(), event.group_id, True, event.user_id
     )
     enabled_cache[event.group_id] = (True, time.monotonic() + 60)
+    switch_revisions[event.group_id] = switch_revisions.get(event.group_id, 0) + 1
+    logger.info("Autochat enabled: group={}", event.group_id)
     settings = get_auto_chat_settings()
     peak_notice = (
         "\n当前处于 DeepSeek 峰价时段，功能暂时挂起，谷价时会自动恢复。"
@@ -128,7 +150,7 @@ async def handle_enable_autochat(event: GroupMessageEvent) -> None:
         else ""
     )
     await enable_autochat.finish(
-        "本群自主回答开关已开启：@小鲸鱼会回答，也会根据讨论低频参与。\n"
+        "本群自主回答开关已开启：@小鲸鱼会回答，也会根据讨论参与聊天。\n"
         f"没有每日次数和冷却限制；基础触发率 {settings.trigger_percent}%。{peak_notice}"
     )
 
@@ -140,6 +162,9 @@ async def handle_disable_autochat(event: GroupMessageEvent) -> None:
         get_economy_database(), event.group_id, False, event.user_id
     )
     enabled_cache[event.group_id] = (False, time.monotonic() + 60)
+    switch_revisions[event.group_id] = switch_revisions.get(event.group_id, 0) + 1
+    context_buffer.clear(event.group_id)
+    logger.info("Autochat disabled: group={}", event.group_id)
     await disable_autochat.finish("本群自主回答已关闭；/问 等显式指令仍可正常使用。")
 
 
@@ -164,12 +189,18 @@ async def handle_autochat_status(event: GroupMessageEvent) -> None:
 
 @mention_chat.handle()
 async def handle_mention_chat(event: GroupMessageEvent) -> None:
-    if _peak_suspended():
+    if not await _enabled(event.group_id):
+        logger.info("Mention AI not enabled: group={} message={}", event.group_id, event.message_id)
         await mention_chat.finish(
-            "当前处于 DeepSeek 峰价时段，小鲸鱼的自动回答已暂停；"
-            "谷价时会自动恢复。需要立即提问仍可使用 /问。"
+            f"本群自主回答尚未开启，请 {AUTO_CHAT_CONTROLLER_ID} 发送「开启自主回答」。"
+            "也可以直接使用 /问 你的问题。"
         )
+    if _peak_suspended():
+        logger.info("Mention AI suspended during peak: group={}", event.group_id)
+        await mention_chat.finish(PEAK_NOTICE)
 
+    revision = switch_revisions.get(event.group_id, 0)
+    mention_revisions[event.group_id] = mention_revisions.get(event.group_id, 0) + 1
     settings = get_auto_chat_settings()
     previous = context_buffer.recent(
         event.group_id,
@@ -185,21 +216,45 @@ async def handle_mention_chat(event: GroupMessageEvent) -> None:
         f"对方说：{question}\n"
         f"最近讨论：\n{format_context(previous) or '（暂无）'}"
     )
+    active_requests[event.group_id] += 1
     try:
-        persona = await get_effective_persona(
-            get_economy_database(), event.group_id, event.user_id
+        logger.info(
+            "Mention AI request started: group={} message={}", event.group_id, event.message_id
         )
-        reply = await ask_deepseek(prompt, get_deepseek_settings(), persona=persona)
-    except DeepSeekError as exc:
-        await mention_chat.finish(str(exc))
-    except Exception:
-        logger.exception("Mention AI reply failed")
-        await mention_chat.finish("小鲸鱼刚才走神了，请稍后再叫我一次。")
-    context_buffer.append(
-        event.group_id, event.user_id, _display_name(event), question
-    )
-    context_buffer.append(event.group_id, event.self_id, "小鲸鱼", reply.text)
-    await mention_chat.finish(MessageSegment.reply(event.message_id) + reply.text)
+        success = False
+        try:
+            persona = await get_effective_persona(
+                get_economy_database(), event.group_id, event.user_id
+            )
+            if not await _reply_allowed(event.group_id, revision):
+                return
+            if _peak_suspended():
+                answer = PEAK_NOTICE
+            else:
+                reply = await ask_deepseek(prompt, get_deepseek_settings(), persona=persona)
+                answer = reply.text
+                success = True
+        except DeepSeekError as exc:
+            answer = str(exc)
+            logger.warning("Mention AI model request failed: group={}", event.group_id)
+        except Exception:
+            logger.exception("Mention AI reply failed: group={}", event.group_id)
+            answer = "小鲸鱼刚才走神了，请稍后再叫我一次。"
+        if not await _reply_allowed(event.group_id, revision):
+            logger.info("Discarded stale mention AI reply: group={}", event.group_id)
+            return
+        if _peak_suspended():
+            answer = PEAK_NOTICE
+            success = False
+        await mention_chat.send(MessageSegment.reply(event.message_id) + answer)
+        if success and await _reply_allowed(event.group_id, revision):
+            context_buffer.append(
+                event.group_id, event.user_id, _display_name(event), question
+            )
+            context_buffer.append(event.group_id, event.self_id, "小鲸鱼", answer)
+        logger.info("Mention AI reply sent: group={} message={}", event.group_id, event.message_id)
+    finally:
+        _release_request(event.group_id)
 
 
 @proactive_chat.handle()
@@ -207,6 +262,7 @@ async def handle_proactive_chat(event: GroupMessageEvent) -> None:
     text = event.get_plaintext().strip()
     if event.user_id == event.self_id or not text or text.startswith(("/", "#")):
         return
+    acquired = False
     try:
         if not await _enabled(event.group_id):
             return
@@ -221,9 +277,17 @@ async def handle_proactive_chat(event: GroupMessageEvent) -> None:
             limit=settings.context_messages,
             ttl_seconds=settings.context_ttl_seconds,
         )
-        china_hour = (datetime.now(UTC) + timedelta(hours=8)).hour
-        if not should_sample_reply(lines, settings, china_hour=china_hour):
+        # Do not queue a second proactive reply to the same discussion while a
+        # response is in flight. This is not a cooldown or a daily limit.
+        if active_requests[event.group_id]:
             return
+        china_hour = (datetime.now(timezone.utc) + timedelta(hours=8)).hour
+        if not should_sample_reply(lines, settings, china_hour=china_hour, bot_id=event.self_id):
+            return
+        active_requests[event.group_id] += 1
+        acquired = True
+        revision = switch_revisions.get(event.group_id, 0)
+        mention_revision = mention_revisions.get(event.group_id, 0)
         prompt = (
             "下面是最近的 QQ 群聊。判断现在是否适合像普通群友一样加入讨论。"
             "只有能回答问题、补充有用信息或带来友善幽默时，才用 1～3 句话发言；"
@@ -232,12 +296,32 @@ async def handle_proactive_chat(event: GroupMessageEvent) -> None:
             f"群聊：\n{format_context(lines)}"
         )
         persona = await get_effective_persona(get_economy_database(), event.group_id, 0)
+        if (
+            not await _reply_allowed(event.group_id, revision)
+            or mention_revisions.get(event.group_id, 0) != mention_revision
+            or _peak_suspended()
+        ):
+            return
         reply = await ask_deepseek(prompt, get_deepseek_settings(), persona=persona)
         if reply.text.strip().upper().startswith(SKIP_TOKEN):
             return
-        context_buffer.append(event.group_id, event.self_id, "小鲸鱼", reply.text)
+        if (
+            not await _reply_allowed(event.group_id, revision)
+            or mention_revisions.get(event.group_id, 0) != mention_revision
+            or _peak_suspended()
+        ):
+            logger.info("Discarded stale proactive AI reply: group={}", event.group_id)
+            return
         await proactive_chat.send(reply.text)
+        if await _reply_allowed(event.group_id, revision):
+            context_buffer.append(event.group_id, event.self_id, "小鲸鱼", reply.text)
+        logger.info(
+            "Proactive AI reply sent: group={} message={}", event.group_id, event.message_id
+        )
     except DeepSeekError:
         logger.warning("Proactive AI reply skipped because the model request failed")
     except Exception:
         logger.exception("Proactive AI reply failed")
+    finally:
+        if acquired:
+            _release_request(event.group_id)

@@ -31,7 +31,8 @@ RUN sed -i \
 # unchanged preserves the cached system-dependency layer on the deployment host.
 ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
 
-COPY pyproject.toml README.md ./
+# Install runtime dependencies before copying project metadata. Editing README
+# or the project version must not re-download Chromium and every dependency.
 RUN pip install --no-cache-dir \
         "nonebot2[fastapi]>=2.4.4,<3.0.0" \
         "nonebot-adapter-onebot>=2.4.6,<3.0.0" \
@@ -62,6 +63,7 @@ RUN NODE_OPTIONS=--dns-result-order=ipv4first \
 # large OpenCV wheels during deployment.
 RUN pip install --no-cache-dir --no-deps "opencv-python-headless==4.11.0.86"
 
+COPY pyproject.toml README.md ./
 COPY src ./src
 COPY bot.py ./bot.py
 COPY assets/petpet ./data/petpet

@@ -6,6 +6,9 @@ from src.services.economy.errors import EconomyError
 
 
 async def message_with_reply(bot: Bot, event: GroupMessageEvent) -> Message:
+    # OneBot resolves replies before dispatch and normally removes their segment.
+    if event.reply is not None:
+        return event.reply.message
     message = event.get_message()
     for segment in message:
         if segment.type != "reply":

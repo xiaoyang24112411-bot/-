@@ -118,6 +118,9 @@ async def handle_unban_all(bot: Bot, event: MessageEvent) -> None:
 
 
 def _reply_message_id(event: GroupMessageEvent) -> int | None:
+    # The OneBot adapter has usually consumed the raw reply segment already.
+    if event.reply is not None:
+        return event.reply.message_id
     for segment in event.get_message():
         if segment.type == "reply":
             try:
