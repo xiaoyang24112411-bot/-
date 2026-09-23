@@ -22,11 +22,27 @@ async def message_with_reply(bot: Bot, event: GroupMessageEvent) -> Message:
 
 
 async def image_url_from_event(bot: Bot, event: GroupMessageEvent) -> str:
-    message = await message_with_reply(bot, event)
-    for segment in message:
-        if segment.type != "image":
-            continue
-        url = str(segment.data.get("url") or segment.data.get("file") or "").strip()
-        if url:
-            return url
+    direct_message = event.get_message()
+    messages = [direct_message]
+    replied_message = await message_with_reply(bot, event)
+    if replied_message is not direct_message:
+        messages.append(replied_message)
+    for message in messages:
+        for segment in message:
+            if segment.type != "image":
+                continue
+            url = str(segment.data.get("url") or "").strip()
+            if url:
+                return url
+            file_id = str(segment.data.get("file") or "").strip()
+            if file_id.startswith(("https://", "http://")):
+                return file_id
+            if file_id:
+                try:
+                    result = await bot.call_api("get_image", file=file_id)
+                    url = str(result.get("url") or "").strip()
+                    if url:
+                        return url
+                except Exception:
+                    pass
     raise EconomyError("请在指令中附带图片，或回复一张图片后发送指令。")

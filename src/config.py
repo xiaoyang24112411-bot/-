@@ -87,6 +87,15 @@ class MediaSettings:
 
 
 @dataclass(frozen=True)
+class MemeSettings:
+    root: Path
+    max_image_bytes: int
+    max_per_group: int
+    proactive_percent: int
+    proactive_interval_seconds: int
+
+
+@dataclass(frozen=True)
 class InformationSettings:
     api_60s_base_url: str
     api_60s_fallback_urls: tuple[str, ...]
@@ -113,6 +122,19 @@ class AutoChatSettings:
     context_ttl_seconds: int
     quiet_start_hour: int
     quiet_end_hour: int
+
+
+@dataclass(frozen=True)
+class PersonaSettings:
+    extra_guidance: str = ""
+
+
+def get_persona_settings() -> PersonaSettings:
+    """Optional operator-managed style notes; the fixed persona stays in personas.py."""
+    extra = _get_value("WHALE_PERSONA_EXTRA").strip()
+    if len(extra) > 500:
+        raise ValueError("WHALE_PERSONA_EXTRA 不能超过 500 个字符")
+    return PersonaSettings(extra_guidance=extra)
 
 
 @dataclass(frozen=True)
@@ -143,6 +165,7 @@ class CommunitySettings:
 @lru_cache(maxsize=1)
 def get_community_settings() -> CommunitySettings:
     """Local group utilities; edits take effect after restarting the bot."""
+
     def integer(name: str, default: int, maximum: int) -> int:
         try:
             value = int(_get_value(name, str(default)))
@@ -173,18 +196,20 @@ class GreetingSettings:
     morning_words: tuple[str, ...] = ("早安", "早上好", "早晨好")
     night_words: tuple[str, ...] = ("晚安", "晚上好")
     morning_replies: tuple[str, ...] = (
-        "早安！愿你今天有个好心情 ☀️",
-        "早上好呀，记得吃早餐！",
-        "新的一天开始啦，祝你一切顺利～",
-        "早安，今天也要好好照顾自己呀。",
-        "早呀！愿今天有开心的小事发生。",
+        "早安呀，今天也要好好照顾自己，本鲸会替你加油的。",
+        "哼，起得还挺早嘛。记得吃早餐呀！",
+        "早上好！小鲸鱼祝你今天顺顺利利。",
+        "才不是特意等你说早安呢……新的一天开心点呀。",
+        "早安，愿今天的好心情像海浪一样慢慢涌来。",
+        "早呀，本鲸先送你一份元气，别忘了喝水。",
     )
     night_replies: tuple[str, ...] = (
-        "晚安呀，祝你做个好梦 🌙",
-        "辛苦一天啦，好好休息吧。",
-        "晚安，愿你今晚睡得安稳。",
-        "把烦恼暂时放下，明天再慢慢来～",
-        "好梦呀，醒来又是新的一天！",
+        "晚安呀，今天辛苦了，安心休息吧。",
+        "哼，别熬太晚。本鲸希望你睡个好觉。",
+        "晚安，小鲸鱼把好梦轻轻推到你枕边。",
+        "才不是舍不得你下线呢……好好睡，明天见。",
+        "把今天的疲惫交给海风吧，晚安。",
+        "晚安，记得放下手机，照顾好自己呀。",
     )
 
 
@@ -197,7 +222,8 @@ def _greeting_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     except ValueError as exc:
         raise ValueError(f"{name} 必须是非空 JSON 字符串数组") from exc
     if (
-        not isinstance(values, list) or not values
+        not isinstance(values, list)
+        or not values
         or any(not isinstance(value, str) or not value.strip() for value in values)
     ):
         raise ValueError(f"{name} 必须是非空 JSON 字符串数组")
@@ -303,6 +329,21 @@ def get_media_settings() -> MediaSettings:
     )
 
 
+def get_meme_settings() -> MemeSettings:
+    root = Path(_get_value("MEME_LIBRARY_ROOT", "data/memes"))
+    if not root.is_absolute():
+        root = PROJECT_ROOT / root
+    return MemeSettings(
+        root=root,
+        max_image_bytes=min(16, max(1, int(_get_value("MEME_MAX_IMAGE_MB", "8")))) * 1024 * 1024,
+        max_per_group=min(1000, max(1, int(_get_value("MEME_MAX_PER_GROUP", "200")))),
+        proactive_percent=min(100, max(0, int(_get_value("MEME_PROACTIVE_PERCENT", "10")))),
+        proactive_interval_seconds=max(
+            60, int(_get_value("MEME_PROACTIVE_INTERVAL_SECONDS", "1800"))
+        ),
+    )
+
+
 def get_information_settings() -> InformationSettings:
     fallback_urls = tuple(
         value.strip().rstrip("/")
@@ -343,16 +384,12 @@ def get_ai_feature_settings() -> AIFeatureSettings:
 
 
 def get_auto_chat_settings() -> AutoChatSettings:
-    context_messages = min(
-        30, max(6, int(_get_value("AUTO_CHAT_CONTEXT_MESSAGES", "12")))
-    )
-    minimum_messages = min(
-        context_messages, max(3, int(_get_value("AUTO_CHAT_MIN_MESSAGES", "6")))
-    )
+    context_messages = min(30, max(6, int(_get_value("AUTO_CHAT_CONTEXT_MESSAGES", "12"))))
+    minimum_messages = min(context_messages, max(3, int(_get_value("AUTO_CHAT_MIN_MESSAGES", "6"))))
     return AutoChatSettings(
         minimum_messages=minimum_messages,
         context_messages=context_messages,
-        trigger_percent=min(100, max(1, int(_get_value("AUTO_CHAT_TRIGGER_PERCENT", "80")))),
+        trigger_percent=min(100, max(1, int(_get_value("AUTO_CHAT_TRIGGER_PERCENT", "100")))),
         context_ttl_seconds=max(300, int(_get_value("AUTO_CHAT_CONTEXT_TTL_SECONDS", "1200"))),
         quiet_start_hour=min(23, max(0, int(_get_value("AUTO_CHAT_QUIET_START_HOUR", "0")))),
         quiet_end_hour=min(23, max(0, int(_get_value("AUTO_CHAT_QUIET_END_HOUR", "7")))),
@@ -372,11 +409,13 @@ def get_subscription_settings() -> SubscriptionSettings:
     return SubscriptionSettings(
         rss_poll_seconds=max(60, int(_get_value("RSS_POLL_SECONDS", "300"))),
         bili_poll_seconds=max(60, int(_get_value("BILI_POLL_SECONDS", "180"))),
-        bilibili_api_base_url=_get_value(
-            "BILIBILI_API_BASE_URL", "https://api.bilibili.com"
-        ).strip().rstrip("/"),
+        bilibili_api_base_url=_get_value("BILIBILI_API_BASE_URL", "https://api.bilibili.com")
+        .strip()
+        .rstrip("/"),
         bilibili_live_api_base_url=_get_value(
             "BILIBILI_LIVE_API_BASE_URL", "https://api.live.bilibili.com"
-        ).strip().rstrip("/"),
+        )
+        .strip()
+        .rstrip("/"),
         bilibili_sessdata=_get_value("BILIBILI_SESSDATA").strip(),
     )

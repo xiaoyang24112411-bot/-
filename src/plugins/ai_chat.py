@@ -4,15 +4,17 @@ import time
 from collections import deque
 
 from nonebot import logger, on_command
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageEvent
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
-from src.config import get_deepseek_settings, get_web_search_settings
+from src.config import get_deepseek_settings, get_meme_settings, get_web_search_settings
 from src.services.ai_features.personas import get_effective_persona
 from src.services.ai_search import WebSearchError, search_web
-from src.services.economy import get_economy_database
+from src.services.economy import EconomyError, get_economy_database
 from src.services.llm import DeepSeekError, ask_deepseek
+from src.services.media.message_image import image_url_from_event
+from src.services.media.qq_image import fetch_qq_image
 
 MAX_PROMPT_LENGTH = 1000
 COOLDOWN_SECONDS = 15.0
@@ -33,28 +35,30 @@ def _conversation_key(event: MessageEvent) -> tuple[int, int]:
 
 @ask.handle()
 async def handle_ask(
+    bot: Bot,
     event: MessageEvent,
     args: Message = CommandArg(),  # noqa: B008 - NoneBot dependency injection
 ) -> None:
-    await _handle_ask(event, args, ask, command="问")
+    await _handle_ask(bot, event, args, ask, command="问")
 
 
 @deep_ask.handle()
-async def handle_deep_ask(event: MessageEvent, args: Message = CommandArg()) -> None:  # noqa: B008
-    await _handle_ask(event, args, deep_ask, command="深度问", deep=True)
+async def handle_deep_ask(bot: Bot, event: MessageEvent, args: Message = CommandArg()) -> None:  # noqa: B008
+    await _handle_ask(bot, event, args, deep_ask, command="深度问", deep=True)
 
 
 @web_ask.handle()
-async def handle_web_ask(event: MessageEvent, args: Message = CommandArg()) -> None:  # noqa: B008
-    await _handle_ask(event, args, web_ask, command="联网问", web=True)
+async def handle_web_ask(bot: Bot, event: MessageEvent, args: Message = CommandArg()) -> None:  # noqa: B008
+    await _handle_ask(bot, event, args, web_ask, command="联网问", web=True)
 
 
 @deep_web_ask.handle()
-async def handle_deep_web_ask(event: MessageEvent, args: Message = CommandArg()) -> None:  # noqa: B008
-    await _handle_ask(event, args, deep_web_ask, command="深度联网问", deep=True, web=True)
+async def handle_deep_web_ask(bot: Bot, event: MessageEvent, args: Message = CommandArg()) -> None:  # noqa: B008
+    await _handle_ask(bot, event, args, deep_web_ask, command="深度联网问", deep=True, web=True)
 
 
 async def _handle_ask(
+    bot: Bot,
     event: MessageEvent,
     args: Message,
     matcher: type[Matcher],
@@ -64,8 +68,21 @@ async def _handle_ask(
     web: bool = False,
 ) -> None:
     prompt = args.extract_plain_text().strip()
-    if not prompt:
+    image = None
+    if isinstance(event, GroupMessageEvent):
+        try:
+            image_url = await image_url_from_event(bot, event)
+        except EconomyError:
+            pass
+        else:
+            try:
+                image = await fetch_qq_image(image_url, get_meme_settings().max_image_bytes)
+            except EconomyError as exc:
+                await matcher.finish(str(exc))
+    if not prompt and image is None:
         await matcher.finish(f"用法：/{command} 你的问题")
+    if not prompt:
+        prompt = "请看图并用简短中文解释这张图片或表情包的内容、文字与可能的语气；不确定就说明。"
 
     if len(prompt) > MAX_PROMPT_LENGTH:
         await matcher.finish(f"问题过长，请控制在 {MAX_PROMPT_LENGTH} 个字符以内。")
@@ -91,6 +108,7 @@ async def _handle_ask(
             history=tuple(history),
             deep=deep,
             sources=sources,
+            image=image,
         )
     except (DeepSeekError, WebSearchError) as exc:
         await matcher.finish(str(exc))

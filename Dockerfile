@@ -69,7 +69,7 @@ COPY bot.py ./bot.py
 COPY assets/petpet ./data/petpet
 
 RUN pip install --no-cache-dir --no-deps . \
-    && mkdir -p /app/data/media /app/data/wordcloud /app/work/media-downloads \
+    && mkdir -p /app/data/media /app/data/memes /app/data/wordcloud /app/work/media-downloads \
     && chown -R bot:bot /app /ms-playwright
 
 USER bot

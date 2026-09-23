@@ -123,7 +123,7 @@ def test_auto_chat_settings_are_bounded(monkeypatch):
 def test_auto_chat_default_trigger_percent(monkeypatch, tmp_path):
     monkeypatch.delenv("AUTO_CHAT_TRIGGER_PERCENT", raising=False)
     monkeypatch.setattr(config, "ENV_FILE", tmp_path / "missing.env")
-    assert get_auto_chat_settings().trigger_percent == 80
+    assert get_auto_chat_settings().trigger_percent == 100
 
 
 def test_peak_cost_protection_defaults_on(monkeypatch):
@@ -132,3 +132,16 @@ def test_peak_cost_protection_defaults_on(monkeypatch):
 
     monkeypatch.setenv("DEEPSEEK_SUSPEND_AUTOCHAT_DURING_PEAK", "false")
     assert not get_deepseek_cost_settings().suspend_autochat_during_peak
+
+
+def test_persona_extra_from_environment(monkeypatch):
+    monkeypatch.setenv("WHALE_PERSONA_EXTRA", "  用更轻快的语气  ")
+    assert config.get_persona_settings().extra_guidance == "用更轻快的语气"
+
+    monkeypatch.setenv("WHALE_PERSONA_EXTRA", "鲸" * 501)
+    try:
+        config.get_persona_settings()
+    except ValueError as exc:
+        assert "500" in str(exc)
+    else:
+        raise AssertionError("oversized persona addition was accepted")

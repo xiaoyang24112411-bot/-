@@ -18,6 +18,13 @@ class AutoChatState:
 
 
 @dataclass(frozen=True)
+class PeakAutochatState:
+    # None means the controller has not overridden the environment default.
+    allow_during_peak: bool | None
+    updated_by: int | None
+
+
+@dataclass(frozen=True)
 class ChatLine:
     user_id: int
     display_name: str
@@ -110,6 +117,36 @@ async def set_autochat_enabled(
             (group_id, int(enabled), updated_by, now),
         )
     return await get_autochat_state(database, group_id)
+
+
+async def get_peak_autochat_state(
+    database: EconomyDatabase, group_id: int
+) -> PeakAutochatState:
+    async with database.connect() as connection:
+        cursor = await connection.execute(
+            "SELECT allow_during_peak, updated_by FROM ai_autochat_peak_settings "
+            "WHERE group_id = ?",
+            (group_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return PeakAutochatState(None, None)
+    return PeakAutochatState(bool(row["allow_during_peak"]), int(row["updated_by"]))
+
+
+async def set_peak_autochat_enabled(
+    database: EconomyDatabase, group_id: int, allow_during_peak: bool, updated_by: int
+) -> PeakAutochatState:
+    async with database.transaction() as connection:
+        await connection.execute(
+            "INSERT INTO ai_autochat_peak_settings"
+            "(group_id, allow_during_peak, updated_by, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(group_id) DO UPDATE SET "
+            "allow_during_peak = excluded.allow_during_peak, "
+            "updated_by = excluded.updated_by, updated_at = excluded.updated_at",
+            (group_id, int(allow_during_peak), updated_by, iso_time()),
+        )
+    return PeakAutochatState(allow_during_peak, updated_by)
 
 
 def in_quiet_hours(hour: int, start_hour: int, end_hour: int) -> bool:

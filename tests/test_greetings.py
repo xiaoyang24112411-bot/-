@@ -49,6 +49,8 @@ def test_custom_words_replies_and_defaults():
     settings = GreetingSettings()
     assert len(set(settings.morning_replies)) >= 5
     assert len(set(settings.night_replies)) >= 5
+    assert any("本鲸" in reply or "小鲸鱼" in reply for reply in settings.morning_replies)
+    assert any("本鲸" in reply or "小鲸鱼" in reply for reply in settings.night_replies)
     custom = replace(settings, morning_words=("早呀",), night_words=("好梦",))
     assert match_greeting("早呀！", custom) == "morning"
     assert match_greeting("好梦 🌙", custom) == "night"

@@ -5,6 +5,7 @@ import pytest
 import respx
 
 from src.config import DeepSeekSettings
+from src.services.ai_features.personas import get_base_persona
 from src.services.ai_search import SearchSource
 from src.services.llm import DeepSeekError, ask_deepseek
 
@@ -39,6 +40,24 @@ async def test_ask_deepseek():
     request = route.calls[0].request
     assert request.headers["Authorization"] == "Bearer test-key"
     assert b'"thinking":{"type":"disabled"}' in request.content
+    system = json.loads(request.content)["messages"][0]["content"]
+    assert "小鲸鱼" in system
+    assert "遇到严肃、难过、危险或紧急的话题" in system
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_ask_deepseek_sends_visual_input():
+    route = respx.post("https://api.deepseek.com/chat/completions").mock(
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": "一张笑脸。"}}]})
+    )
+    reply = await ask_deepseek("这张图什么意思？", settings(), image=(b"image-bytes", "png"))
+    parts = json.loads(route.calls[0].request.content)["messages"][-1]["content"]
+    assert reply.text == "一张笑脸。"
+    assert parts[0] == {"type": "text", "text": "这张图什么意思？"}
+    assert parts[1]["type"] == "image_url"
+    assert parts[1]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert parts[1]["image_url"]["detail"] == "high"
 
 
 @respx.mock
@@ -67,6 +86,26 @@ async def test_ask_deepseek_includes_persona_and_history():
         "assistant",
         "user",
     ]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_shared_base_persona_is_not_duplicated(monkeypatch):
+    monkeypatch.setenv("WHALE_PERSONA_EXTRA", "说话再俏皮一点")
+    route = respx.post("https://api.deepseek.com/chat/completions").mock(
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": "早安呀。"}}]})
+    )
+
+    await ask_deepseek(
+        "早安",
+        settings(),
+        persona=get_base_persona() + "\n\n当前群聊或用户的附加表达偏好：\n更简洁",
+    )
+
+    system = json.loads(route.calls[0].request.content)["messages"][0]["content"]
+    assert system.count("你是 QQ 群里的“小鲸鱼”") == 1
+    assert "说话再俏皮一点" in system
+    assert "更简洁" in system
 
 
 @pytest.mark.asyncio
@@ -119,16 +158,25 @@ async def test_read_only_tool_call(monkeypatch):
         httpx.Response(
             200,
             json={
-                "choices": [{"message": {
-                    "role": "assistant",
-                    "content": None,
-                    "reasoning_content": "思考过程",
-                    "tool_calls": [{
-                        "id": "call_1",
-                        "type": "function",
-                        "function": {"name": "get_current_weather", "arguments": '{"city":"北京"}'},
-                    }],
-                }}],
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "reasoning_content": "思考过程",
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "get_current_weather",
+                                        "arguments": '{"city":"北京"}',
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
             },
         ),
         httpx.Response(200, json={"choices": [{"message": {"content": "北京晴。"}}]}),
@@ -142,13 +190,16 @@ async def test_read_only_tool_call(monkeypatch):
 
 @respx.mock
 @pytest.mark.asyncio
-@pytest.mark.parametrize("payload", [
-    [],
-    {"choices": []},
-    {"choices": [{"message": []}]},
-    {"choices": [{"message": {"content": "", "tool_calls": "bad"}}]},
-    {"choices": [{"message": {"content": "  "}}]},
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [],
+        {"choices": []},
+        {"choices": [{"message": []}]},
+        {"choices": [{"message": {"content": "", "tool_calls": "bad"}}]},
+        {"choices": [{"message": {"content": "  "}}]},
+    ],
+)
 async def test_malformed_responses_raise_safe_error(payload):
     respx.post("https://api.deepseek.com/chat/completions").mock(
         return_value=httpx.Response(200, json=payload)

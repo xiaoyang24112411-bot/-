@@ -11,7 +11,7 @@ from src.config import get_economy_settings
 from src.services.group_polls_schema import GROUP_POLLS_SCHEMA_SQL
 from src.services.group_reminders_schema import GROUP_REMINDERS_SCHEMA_SQL
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 11
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -249,6 +249,30 @@ CREATE TABLE IF NOT EXISTS ai_autochat_settings (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS ai_autochat_peak_settings (
+    group_id INTEGER PRIMARY KEY CHECK (group_id > 0),
+    allow_during_peak INTEGER NOT NULL CHECK (allow_during_peak IN (0, 1)),
+    updated_by INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS meme_group_settings (
+    group_id INTEGER PRIMARY KEY CHECK (group_id > 0),
+    proactive_enabled INTEGER NOT NULL DEFAULT 0 CHECK (proactive_enabled IN (0, 1)),
+    updated_by INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_memes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL CHECK (group_id > 0),
+    sha256 TEXT NOT NULL,
+    file_extension TEXT NOT NULL CHECK (file_extension IN ('jpg', 'png', 'gif', 'webp')),
+    added_by INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (group_id, sha256)
+);
+
 CREATE TABLE IF NOT EXISTS wordcloud_group_settings (
     group_id INTEGER PRIMARY KEY,
     enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
@@ -326,6 +350,8 @@ CREATE INDEX IF NOT EXISTS idx_rss_subscriptions_enabled
     ON rss_subscriptions(enabled, group_id);
 CREATE INDEX IF NOT EXISTS idx_bili_subscriptions_enabled
     ON bili_subscriptions(enabled, group_id);
+CREATE INDEX IF NOT EXISTS idx_group_memes_group_id
+    ON group_memes(group_id, id);
 """
 
 

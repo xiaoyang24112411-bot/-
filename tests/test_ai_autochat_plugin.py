@@ -10,18 +10,23 @@ import pytest
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageSegment
 from nonebot.exception import FinishedException
 
-from src.config import AutoChatSettings
+from src.config import AutoChatSettings, DeepSeekCostSettings
 from src.services.ai_features import autochat as autochat_service
-from src.services.ai_features.autochat import AutoChatState, RecentChatBuffer
+from src.services.ai_features.autochat import (
+    AutoChatState,
+    PeakAutochatState,
+    RecentChatBuffer,
+)
+from src.services.deepseek_pricing import BillingPeriod
 from src.services.economy.database import EconomyDatabase
 from src.services.llm import DeepSeekError, DeepSeekReply
 
 
-def event(message="hi", *, to_me=True, user_id=20, message_id=1):
+def event(message="hi", *, to_me=True, user_id=20, group_id=100, message_id=1):
     value = Message(message)
     return GroupMessageEvent(
         time=int(time.time()), self_id=99, post_type="message", message_type="group",
-        sub_type="normal", message_id=message_id, group_id=100, user_id=user_id,
+        sub_type="normal", message_id=message_id, group_id=group_id, user_id=user_id,
         message=value, original_message=value.copy(), raw_message=str(value), font=0,
         sender={"user_id": user_id, "nickname": "测试群友"}, to_me=to_me,
     )
@@ -40,23 +45,33 @@ def plugin(monkeypatch):
     monkeypatch.setattr(ai_autochat, "switch_revisions", {})
     monkeypatch.setattr(ai_autochat, "mention_revisions", {})
     monkeypatch.setattr(ai_autochat, "switch_locks", {})
+    monkeypatch.setattr(ai_autochat, "peak_switch_locks", {})
     monkeypatch.setattr(ai_autochat, "active_requests", Counter())
-    monkeypatch.setattr(ai_autochat, "_peak_suspended", lambda: False)
+    monkeypatch.setattr(ai_autochat, "_peak_suspended", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        ai_autochat, "get_peak_autochat_state",
+        AsyncMock(return_value=PeakAutochatState(None, None)),
+    )
     monkeypatch.setattr(ai_autochat, "get_economy_database", lambda: None)
     monkeypatch.setattr(ai_autochat, "get_effective_persona", AsyncMock(return_value="小鲸鱼"))
     monkeypatch.setattr(ai_autochat, "get_deepseek_settings", lambda: None)
     monkeypatch.setattr(ai_autochat, "get_auto_chat_settings", lambda: AutoChatSettings(
-        minimum_messages=3, context_messages=12, trigger_percent=80,
+        minimum_messages=3, context_messages=12, trigger_percent=100,
         context_ttl_seconds=1200, quiet_start_hour=0, quiet_end_hour=0,
     ))
     monkeypatch.setattr(ai_autochat, "ask_deepseek", AsyncMock(
         return_value=DeepSeekReply(text="你好", model="test")
     ))
-    for matcher in (ai_autochat.mention_chat, ai_autochat.proactive_chat,
-                    ai_autochat.enable_autochat, ai_autochat.disable_autochat):
+    for matcher in (
+        ai_autochat.mention_chat, ai_autochat.proactive_chat,
+        ai_autochat.enable_autochat, ai_autochat.disable_autochat,
+        ai_autochat.autochat_status, ai_autochat.enable_peak_autochat,
+        ai_autochat.disable_peak_autochat, ai_autochat.peak_autochat_status,
+    ):
         monkeypatch.setattr(matcher, "send", AsyncMock())
         monkeypatch.setattr(matcher, "finish", AsyncMock(side_effect=FinishedException))
     monkeypatch.setattr(ai_autochat, "set_autochat_enabled", AsyncMock())
+    monkeypatch.setattr(ai_autochat, "set_peak_autochat_enabled", AsyncMock())
     return ai_autochat
 
 
@@ -78,11 +93,109 @@ async def test_disabled_mentions_explain_how_to_enable(plugin):
 
 
 async def test_peak_mentions_do_not_call_model(plugin, monkeypatch):
-    monkeypatch.setattr(plugin, "_peak_suspended", lambda: True)
+    monkeypatch.setattr(plugin, "_peak_suspended", AsyncMock(return_value=True))
     with pytest.raises(FinishedException):
         await plugin.handle_mention_chat(event())
     assert "峰价" in plugin.mention_chat.finish.call_args.args[0]
     plugin.ask_deepseek.assert_not_awaited()
+
+
+async def test_only_controller_can_change_peak_switch(plugin):
+    with pytest.raises(FinishedException):
+        await plugin.handle_enable_peak_autochat(event())
+    plugin.set_peak_autochat_enabled.assert_not_awaited()
+
+
+async def test_peak_commands_only_change_the_current_group(plugin):
+    controller = event(user_id=2448821316, group_id=200)
+    with pytest.raises(FinishedException):
+        await plugin.handle_enable_peak_autochat(controller)
+    plugin.set_peak_autochat_enabled.assert_awaited_with(None, 200, True, 2448821316)
+    assert "本群" in plugin.enable_peak_autochat.finish.call_args.args[0]
+
+    with pytest.raises(FinishedException):
+        await plugin.handle_disable_peak_autochat(event(user_id=2448821316))
+    plugin.set_peak_autochat_enabled.assert_awaited_with(None, 100, False, 2448821316)
+    assert "本群" in plugin.disable_peak_autochat.finish.call_args.args[0]
+
+    plugin.get_peak_autochat_state.return_value = PeakAutochatState(True, 2448821316)
+    with pytest.raises(FinishedException):
+        await plugin.handle_peak_autochat_status(controller)
+    plugin.get_peak_autochat_state.assert_awaited_with(None, 200)
+    assert "本群高峰期自主回答：已开启" in plugin.peak_autochat_status.finish.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_peak_policy_honors_each_group_and_environment_default(tmp_path, monkeypatch):
+    try:
+        nonebot.get_driver()
+    except ValueError:
+        nonebot.init()
+    from src.plugins import ai_autochat
+
+    database = EconomyDatabase(tmp_path / "peak-policy.sqlite3")
+    monkeypatch.setattr(ai_autochat, "get_economy_database", lambda: database)
+    monkeypatch.setattr(
+        ai_autochat, "get_deepseek_cost_settings", lambda: DeepSeekCostSettings(True)
+    )
+    monkeypatch.setattr(ai_autochat, "deepseek_billing_period", lambda: BillingPeriod.PEAK)
+
+    assert await ai_autochat._peak_suspended(100)
+    await autochat_service.set_peak_autochat_enabled(database, 100, True, 2448821316)
+    assert not await ai_autochat._peak_suspended(100)
+    assert await ai_autochat._peak_suspended(200)
+    await autochat_service.set_peak_autochat_enabled(database, 100, False, 2448821316)
+    assert await ai_autochat._peak_suspended(100)
+
+    monkeypatch.setattr(
+        ai_autochat, "get_deepseek_cost_settings", lambda: DeepSeekCostSettings(False)
+    )
+    assert not await ai_autochat._peak_suspended(200)  # no override: env fallback
+    assert await ai_autochat._peak_suspended(100)  # explicit off overrides env
+    monkeypatch.setattr(ai_autochat, "deepseek_billing_period", lambda: BillingPeriod.OFF_PEAK)
+    assert not await ai_autochat._peak_suspended(100)
+
+
+@pytest.mark.parametrize("proactive", [False, True])
+async def test_turning_off_peak_during_model_request_blocks_reply(
+    plugin, monkeypatch, proactive
+):
+    allowed = True
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def suspended(group_id):
+        assert group_id == 100
+        return not allowed
+
+    async def set_peak(database, group_id, enabled, updated_by):
+        nonlocal allowed
+        assert (group_id, updated_by) == (100, 2448821316)
+        allowed = enabled
+
+    async def slow_reply(*args, **kwargs):
+        started.set()
+        await release.wait()
+        return DeepSeekReply("峰价旧回复", "test")
+
+    monkeypatch.setattr(plugin, "_peak_suspended", suspended)
+    monkeypatch.setattr(plugin, "set_peak_autochat_enabled", AsyncMock(side_effect=set_peak))
+    monkeypatch.setattr(plugin, "ask_deepseek", AsyncMock(side_effect=slow_reply))
+    monkeypatch.setattr(plugin, "should_sample_reply", lambda *args, **kwargs: True)
+    handler = plugin.handle_proactive_chat if proactive else plugin.handle_mention_chat
+    task = asyncio.create_task(handler(event(to_me=not proactive)))
+    await asyncio.wait_for(started.wait(), timeout=2)
+    try:
+        with pytest.raises(FinishedException):
+            await plugin.handle_disable_peak_autochat(event(user_id=2448821316))
+    finally:
+        release.set()
+        await asyncio.wait_for(task, timeout=2)
+
+    if proactive:
+        plugin.proactive_chat.send.assert_not_awaited()
+    else:
+        sent = str(plugin.mention_chat.send.call_args.args[0])
+        assert "峰价" in sent and "峰价旧回复" not in sent
 
 
 async def test_only_controller_can_change_switch(plugin):

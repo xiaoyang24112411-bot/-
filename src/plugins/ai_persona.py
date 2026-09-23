@@ -8,7 +8,6 @@ from nonebot.rule import Rule
 
 from src.services.ai_features import AIFeatureError
 from src.services.ai_features.personas import (
-    WHALE_PERSONA,
     clear_persona,
     get_persona,
     set_persona,
@@ -65,7 +64,7 @@ async def handle_show_persona(event: GroupMessageEvent) -> None:
         + (
             f" 当前附加人格：{persona}\n基础人格始终为“小鲸鱼”。"
             if persona
-            else f" 当前使用默认小鲸鱼人格：\n{WHALE_PERSONA}"
+            else " 当前使用默认小鲸鱼人格：傲娇、嘴硬心软，偶尔撒娇，但会认真回答问题。"
         )
     )
 

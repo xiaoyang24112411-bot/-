@@ -21,6 +21,7 @@ services:
       - petpet-data:/app/data/petpet
       - economy-data:/app/data/economy
       - media-data:/app/data/media
+      - meme-data:/app/data/memes
     networks:
       - botnet
     security_opt:
@@ -65,3 +66,4 @@ volumes:
   petpet-data:
   economy-data:
   media-data:
+  meme-data:
