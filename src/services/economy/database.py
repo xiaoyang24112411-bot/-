@@ -11,7 +11,7 @@ from src.config import get_economy_settings
 from src.services.group_polls_schema import GROUP_POLLS_SCHEMA_SQL
 from src.services.group_reminders_schema import GROUP_REMINDERS_SCHEMA_SQL
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -356,6 +356,16 @@ CREATE INDEX IF NOT EXISTS idx_group_memes_group_id
 
 
 SCHEMA_SQL += GROUP_POLLS_SCHEMA_SQL + GROUP_REMINDERS_SCHEMA_SQL
+
+# One account-wide block list, deliberately without a group_id. This is additive
+# so existing economy data and WAL files remain intact during an upgrade.
+SCHEMA_SQL += """
+CREATE TABLE IF NOT EXISTS bot_global_blacklist (
+    user_id INTEGER PRIMARY KEY CHECK (user_id > 0),
+    blocked_by INTEGER NOT NULL,
+    blocked_at TEXT NOT NULL
+);
+"""
 
 
 class EconomyDatabase:

@@ -16,6 +16,9 @@ from nonebot_plugin_petpet import download as petpet_download
 from nonebot_plugin_petpet.data_source import memes
 
 from src.compat.pydantic import apply_build_image_schema_compatibility
+from src.config import AUTO_CHAT_CONTROLLER_ID
+from src.services.economy import get_economy_database
+from src.services.global_blacklist import is_blocked
 from src.services.petpet import (
     download_qq_avatar,
     has_explicit_target,
@@ -102,6 +105,18 @@ async def normalize_petpet_message(
     normalized, is_alias_or_common = normalize_command_text(first_text)
     if not is_alias_or_common and not is_registered_petpet_command(normalized):
         return
+
+    # Event preprocessors may run concurrently. Check recognized petpet
+    # commands here too, so its busy notice cannot race ahead of our blocker.
+    if event.user_id not in (event.self_id, AUTO_CHAT_CONTROLLER_ID):
+        try:
+            if await is_blocked(get_economy_database(), event.user_id):
+                raise IgnoredException("sender is in the global blacklist")
+        except IgnoredException:
+            raise
+        except Exception as exc:
+            logger.exception("Global blacklist lookup failed in petpet preprocessor")
+            raise IgnoredException("global blacklist unavailable") from exc
 
     if petpet_render_lock.locked():
         await bot.send(event, "当前有表情正在生成，请稍后再试。")
