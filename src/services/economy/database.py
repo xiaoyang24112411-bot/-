@@ -11,7 +11,7 @@ from src.config import get_economy_settings
 from src.services.group_polls_schema import GROUP_POLLS_SCHEMA_SQL
 from src.services.group_reminders_schema import GROUP_REMINDERS_SCHEMA_SQL
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -364,6 +364,44 @@ CREATE TABLE IF NOT EXISTS bot_global_blacklist (
     user_id INTEGER PRIMARY KEY CHECK (user_id > 0),
     blocked_by INTEGER NOT NULL,
     blocked_at TEXT NOT NULL
+);
+"""
+
+# A pair occupies both users atomically. Existing daily_spouses rows remain as
+# draw history and are adopted on first use after upgrading from schema 12.
+SCHEMA_SQL += """
+CREATE TABLE IF NOT EXISTS daily_spouse_bindings (
+    group_id INTEGER NOT NULL,
+    draw_date TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    partner_user_id INTEGER NOT NULL CHECK (partner_user_id != user_id),
+    source TEXT NOT NULL CHECK (source IN ('random', 'forced', 'legacy')),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, draw_date, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS daily_spouse_releases (
+    group_id INTEGER NOT NULL,
+    draw_date TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, draw_date, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS daily_spouse_optouts (
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS daily_spouse_breakups (
+    group_id INTEGER NOT NULL,
+    draw_date TEXT NOT NULL,
+    user_low_id INTEGER NOT NULL,
+    user_high_id INTEGER NOT NULL CHECK (user_high_id > user_low_id),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, draw_date, user_low_id, user_high_id)
 );
 """
 
