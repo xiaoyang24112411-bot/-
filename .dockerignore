@@ -10,5 +10,6 @@ outputs
 data
 work
 tests
-scripts
+scripts/*
+!scripts/sync-memes.py
 *.egg-info
