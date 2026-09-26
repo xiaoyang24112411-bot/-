@@ -25,7 +25,7 @@ RUN sed -i \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system bot \
     && useradd --system --gid bot --home-dir /app bot \
-    && mkdir -p /app/data/petpet /app/data/economy
+    && mkdir -p /app/data/petpet /app/data/meme-generator /app/data/economy
 
 # Use the faster mirror only for Python packages; keeping the base ENV above
 # unchanged preserves the cached system-dependency layer on the deployment host.
@@ -50,6 +50,9 @@ RUN pip install --no-cache-dir \
         "loguru>=0.6.0,<1.0.0" \
         "matplotlib>=3.0.0,<4.0.0" \
         "numpy>=1.20.0,<2.0.0" \
+        "nonebot-plugin-memes==0.8.1" \
+        "meme-generator==0.2.3" \
+        "nonebot-plugin-orm==0.8.3" \
     && pip install --no-cache-dir --no-deps \
         nonebot-plugin-imageutils==0.1.17 \
         nonebot-plugin-petpet==0.3.21
@@ -66,6 +69,7 @@ RUN pip install --no-cache-dir --no-deps "opencv-python-headless==4.11.0.86"
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY bot.py ./bot.py
+COPY scripts/sync-memes.py ./scripts/sync-memes.py
 COPY assets/petpet ./data/petpet
 
 RUN pip install --no-cache-dir --no-deps . \

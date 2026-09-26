@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -14,6 +15,7 @@ from nonebot.message import event_preprocessor
 from nonebot.params import CommandArg
 
 from src.config import get_deepseek_settings
+from src.services.command_help import render_help, search_commands
 from src.services.economy import get_economy_database
 from src.services.permissions import is_bot_admin
 from src.services.runtime_health import runtime_health
@@ -23,7 +25,8 @@ maintenance_mode = False
 
 HELP_TEXT = """====== Bot 完整指令 ======
 【基础】
-/help　查看帮助
+/help [分类]　查看帮助（如 /help 表情、/help 积分、/help AI）
+/指令搜索 关键词　搜索相关指令
 /ping　测试连通与延迟
 早安 / 早上好 / 晚安　群聊自动问候（无需斜杠；默认无冷却）
 
@@ -61,18 +64,26 @@ HELP_TEXT = """====== Bot 完整指令 ======
 提醒我 10分钟 喝水｜提醒我 2026-09-23 08:00 开会
 我的提醒｜取消提醒 编号
 
-【积分与娱乐】
+【积分与商店】
 /签到｜/积分｜/排行榜
 /转账 @群友 积分｜/发红包 总分 份数｜/抢红包
 /打劫｜/商店｜/兑换 商品编号 [数量]
+
+【娱乐与群友互动】
 /roll 1-100｜掷骰子 2d6
 /今日运势｜/人品
 /魔法占卜｜/答案之书 问题｜/舔狗日记
 /今日老婆（随机老婆／抽老婆）｜/我的老婆｜/解绑老婆｜/强娶 @群友
 退出老婆池｜加入老婆池（仅影响本群）
 /原神10抽｜/方舟十连｜/fgo一井
-/表情列表
-/表情 模板名 [文字/@群友]
+
+【头像表情包】
+/表情列表（旧版）｜/新表情列表（新版模板总览）
+/头像模板 [页码]　分页查看可直接生成的头像模板
+/头像盲盒 [@群友]　随机生成一张头像表情（不指定则用自己）
+摸摸 [@群友]｜/表情 模板名 [文字/@群友]（旧版）
+#关键词 [@群友/图片/文字]（新版；单头像模板不填目标即用自己头像）
+/表情搜索 关键词｜/表情详情 关键词（新版）
 
 【群聊游戏】
 五子棋｜加入五子棋｜落子 H8｜结束五子棋
@@ -107,6 +118,7 @@ HELP_TEXT = """====== Bot 完整指令 ======
 /reload｜/restart｜/stop（维护模式）｜/start"""
 
 help_command = on_command("help", aliases={"帮助"}, priority=5, block=True)
+search_help_command = on_command("指令搜索", aliases={"搜索指令"}, priority=5, block=True)
 full_help_command = on_fullmatch(("完整指令", "/完整指令"), priority=5, block=True)
 status_command = on_command("status", priority=5, block=True)
 echo_command = on_command("echo", priority=5, block=True)
@@ -140,7 +152,8 @@ async def _require_admin(matcher, event: MessageEvent) -> None:
 
 async def _exit_later() -> None:
     await asyncio.sleep(1)
-    os._exit(0)
+    # Uvicorn handles SIGTERM and runs shutdown hooks before Docker restarts us.
+    os.kill(os.getpid(), signal.SIGTERM)
 
 
 @event_preprocessor
@@ -150,8 +163,17 @@ async def block_during_maintenance(event: MessageEvent) -> None:
 
 
 @help_command.handle()
-async def handle_help() -> None:
-    await help_command.finish(HELP_TEXT)
+async def handle_help(args: Message = CommandArg()) -> None:  # noqa: B008
+    await help_command.finish(
+        MessageSegment.text(render_help(HELP_TEXT, args.extract_plain_text()))
+    )
+
+
+@search_help_command.handle()
+async def handle_search_help(args: Message = CommandArg()) -> None:  # noqa: B008
+    await search_help_command.finish(
+        MessageSegment.text(search_commands(HELP_TEXT, args.extract_plain_text()))
+    )
 
 
 @full_help_command.handle()
@@ -187,6 +209,12 @@ async def handle_echo(event: MessageEvent, args: Message = CommandArg()) -> None
 
 async def _restart(matcher, event: MessageEvent) -> None:
     await _require_admin(matcher, event)
+    if not Path("/.dockerenv").is_file():
+        await matcher.finish(
+            "当前并非 Docker 运行环境，不能通过聊天自动拉起新进程。"
+            "请在运行窗口停止后重新运行 scripts/run.ps1；机器人目前仍在运行。"
+        )
+        return
     asyncio.create_task(_exit_later())
     await matcher.finish("正在重新载入全部插件；Docker 会自动拉起机器人。")
 

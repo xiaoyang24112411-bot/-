@@ -10,6 +10,17 @@ ALIASES = {
     "拍拍": "拍",
     "咬": "啃",
 }
+
+
+def rewrite_petpet_help_command(text: str) -> str | None:
+    """Keep legacy and modern help pages distinct despite overlapping aliases."""
+    if re.fullmatch(r"\s*/?(?:表情列表|旧表情列表)\s*", text):
+        return "/头像相关表情包"
+    if re.fullmatch(r"\s*/?新表情列表\s*", text):
+        return "/表情包制作"
+    return None
+
+
 COMMAND_PATTERN = re.compile(
     r"^(?P<leading>\s*)(?P<prefix>/?)"
     r"(?P<command>怎么说话的|抱大腿|风车转|"

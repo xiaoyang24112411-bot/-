@@ -23,6 +23,7 @@ from src.services.petpet import (
     download_qq_avatar,
     has_explicit_target,
     normalize_command_text,
+    rewrite_petpet_help_command,
     strip_optional_command_prefix,
 )
 
@@ -92,8 +93,8 @@ async def normalize_petpet_message(
         return
 
     first_text = str(message[0].data.get("text", ""))
-    if re.fullmatch(r"\s*/?表情列表\s*", first_text):
-        message[0].data["text"] = "/头像表情包"
+    if help_command := rewrite_petpet_help_command(first_text):
+        message[0].data["text"] = help_command
         return
 
     generic = re.match(r"^(?P<leading>\s*)/?表情\s+(?P<template>\S+)(?P<rest>.*)$", first_text)

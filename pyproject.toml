@@ -17,6 +17,9 @@ dependencies = [
     "aiosqlite>=0.20.0,<1.0.0",
     "python-dotenv>=1.0.0,<2.0.0",
     "nonebot-plugin-petpet==0.3.21",
+    "nonebot-plugin-memes==0.8.1",
+    "meme-generator==0.2.3",
+    "nonebot-plugin-orm==0.8.3",
     "Pillow==9.5.0",
     "playwright>=1.55.0,<2.0.0",
     "yt-dlp>=2026.8.19",
@@ -36,7 +39,7 @@ dev = [
 [tool.nonebot]
 plugin_dirs = ["src/plugins"]
 builtin_plugins = []
-plugins = ["nonebot_plugin_petpet"]
+plugins = ["nonebot_plugin_petpet", "nonebot_plugin_memes"]
 
 [tool.setuptools.packages.find]
 include = ["src*"]

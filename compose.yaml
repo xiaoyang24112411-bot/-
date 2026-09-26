@@ -11,6 +11,7 @@ services:
       - .env.prod
     environment:
       TZ: Asia/Shanghai
+      MEME_HOME: /app/data/meme-generator
     healthcheck:
       test: ["CMD", "python", "-m", "src.services.healthcheck"]
       interval: 30s
@@ -19,6 +20,7 @@ services:
       retries: 3
     volumes:
       - petpet-data:/app/data/petpet
+      - meme-generator-data:/app/data/meme-generator
       - economy-data:/app/data/economy
       - media-data:/app/data/media
       - meme-data:/app/data/memes
@@ -64,6 +66,7 @@ networks:
 
 volumes:
   petpet-data:
+  meme-generator-data:
   economy-data:
   media-data:
   meme-data:

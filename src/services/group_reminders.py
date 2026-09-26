@@ -223,6 +223,22 @@ async def finish_reminder_send(
         )
 
 
+async def release_unstarted_reminders(
+    database: EconomyDatabase, reminder_ids: list[int], *, now: int | None = None,
+) -> None:
+    """Return this worker's unattempted claims; never replay a sending reminder."""
+    if not reminder_ids:
+        return
+    current = int(time.time()) if now is None else now
+    placeholders = ",".join("?" for _ in reminder_ids)
+    async with database.transaction() as connection:
+        await connection.execute(
+            "UPDATE group_reminders SET status='pending',updated_at=? "
+            f"WHERE id IN ({placeholders}) AND status='claimed'",
+            (current, *reminder_ids),
+        )
+
+
 async def deliver_due_reminders(
     database: EconomyDatabase, bots: Mapping[str, Any], *, now: int | None = None,
     send_timeout: float = 15,
@@ -269,5 +285,22 @@ async def deliver_due_reminders(
                 logger.info("Reminder sent: reminder={} group={}", item.id, item.group_id)
             return int(sent)
 
-    results = await asyncio.gather(*(deliver(item) for item in reminders))
+    tasks = [asyncio.create_task(deliver(item)) for item in reminders]
+    try:
+        results = await asyncio.gather(*tasks)
+    except BaseException as exc:
+        # A cancelled gather already cancelled its children. Cancelling them again
+        # could interrupt their shielded database cleanup; drain them instead.
+        if not isinstance(exc, asyncio.CancelledError):
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    finally:
+        # Items waiting for the semaphore have not reached begin_reminder_send.
+        # Preserve them through graceful shutdown without retrying uncertain sends.
+        await asyncio.shield(release_unstarted_reminders(
+            database, [item.id for item in reminders], now=now,
+        ))
     return sum(results)

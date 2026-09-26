@@ -345,6 +345,43 @@ async def test_cancellation_during_delivery_marks_unknown_no_retry(database):
     assert not await claim_due_reminders(database, [99], now=NOW + 21)
 
 
+async def test_shutdown_preserves_queued_reminders_without_replaying_attempted_sends(database):
+    for index in range(6):
+        await add(database, f"queued-{index}")
+    bot = fake_bot()
+    all_senders_started = asyncio.Event()
+    attempted_ids = set()
+
+    async def hang(**kwargs):
+        body = kwargs["message"][1].data["text"]
+        attempted_ids.add(int(body.split("#", 1)[1].split("：", 1)[0]))
+        if len(attempted_ids) == 4:
+            all_senders_started.set()
+        await asyncio.Event().wait()
+
+    bot.send_group_msg.side_effect = hang
+    task = asyncio.create_task(deliver_due_reminders(database, {"99": bot}, now=NOW + 20))
+    try:
+        await asyncio.wait_for(all_senders_started.wait(), timeout=5)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    records = await list_reminders(database, 99, 100, 20)
+    assert len(attempted_ids) == 4
+    assert all(item.status == "failed" for item in records if item.id in attempted_ids)
+    assert all(item.status == "pending" for item in records if item.id not in attempted_ids)
+
+    # A new worker sends only the two reminders that never reached the transport.
+    restarted_bot = fake_bot()
+    assert await deliver_due_reminders(
+        EconomyDatabase(database.path), {"99": restarted_bot}, now=NOW + 21,
+    ) == 2
+    assert restarted_bot.send_group_msg.await_count == 2
+    assert await deliver_due_reminders(database, {"99": restarted_bot}, now=NOW + 22) == 0
+
+
 async def test_offline_probe_failure_leaves_pending(database):
     await add(database)
     bot = fake_bot()
